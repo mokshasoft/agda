@@ -1,0 +1,7 @@
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]UnreachableDefinitions
+The following definitions are not reachable from the entry point:
+  unusedInHelper
+  unusedInMain

@@ -6,7 +6,7 @@ module Agda.TypeChecking.DeadCode
   , lookupQNameByString
   ) where
 
-import Control.Monad (filterM)
+import Control.Monad (filterM, when)
 import Control.Monad.Trans
 
 import Data.List (isPrefixOf, partition)
@@ -176,25 +176,28 @@ checkUnreachableDefinitions projectDir root = do
   sig <- getSignature
   let defs = sig ^. sigDefinitions
 
+  -- Helper to check if a QName's source file is in the project directory
+  let isInProject :: QName -> Bool
+      isInProject qn = case rangeFile (getRange qn) of
+        Strict.Nothing -> False
+        Strict.Just rf -> projectDir `isPrefixOf` filePath (rangeFilePath rf)
+
   -- Build reachability set starting from root only
+  -- Only recurse into definitions that are within the project directory
+  -- to avoid traversing external libraries (which could cause OOM)
   seenNames <- liftIO HT.empty :: TCM (HashTableLU QName ())
 
   let goName :: QName -> IO ()
       goName x = HT.insertingIfAbsent seenNames x
         (\_ -> pure ())
         (pure ())
-        (\_ -> go (HMap.lookup x defs))
+        -- Only recurse into definitions within the project directory
+        (\_ -> when (isInProject x) $ go (HMap.lookup x defs))
 
       go :: NamesIn a => a -> IO ()
       go x = namesIn' goName x
 
   liftIO $ goName root
-
-  -- Helper to check if a QName's source file is in the project directory
-  let isInProject :: QName -> Bool
-      isInProject qn = case rangeFile (getRange qn) of
-        Strict.Nothing -> False
-        Strict.Just rf -> projectDir `isPrefixOf` filePath (rangeFilePath rf)
 
   -- Collect all unreachable definitions that are in the project
   unreachable <- liftIO $ filterM
