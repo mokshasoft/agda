@@ -693,6 +693,7 @@ defaultOptions = Options
   , optOnlyScopeChecking     = False
   , optTransliterate         = False
   , optDiagnosticsColour     = AutoColour
+  , optDeadCodeRoot          = Nothing
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1181,6 +1182,12 @@ onlyScopeCheckingFlag o = return $ o { optOnlyScopeChecking = True }
 transliterateFlag :: Flag CommandLineOptions
 transliterateFlag o = return $ o { optTransliterate = True }
 
+deadCodeFlag :: String -> Flag CommandLineOptions
+deadCodeFlag s o = return $ o { optDeadCodeRoot = Just s }
+
+mdOnlyAgdaBlocksFlag :: Bool -> Flag CommandLineOptions
+mdOnlyAgdaBlocksFlag b o = return $ o { optMdOnlyAgdaBlocks = b }
+
 withKFlag :: Flag PragmaOptions
 withKFlag =
   -- with-K is the opposite of --without-K, so collapse default when disabling --without-K
@@ -1378,6 +1385,9 @@ standardOptions =
                     "transliterate unsupported code points when printing to stdout/stderr"
     , Option []     ["colour", "color"] (OptArg diagnosticsColour "always|auto|never")
                     ("whether or not to colour diagnostics output. The default is auto.")
+
+    , Option []     ["dead-code"] (ReqArg deadCodeFlag "QNAME")
+                    "report definitions not reachable from QNAME (e.g. Module.function)"
     ] ++ map (fmap lensPragmaOptions) pragmaOptions
 
 -- | Command line options of previous versions of Agda.

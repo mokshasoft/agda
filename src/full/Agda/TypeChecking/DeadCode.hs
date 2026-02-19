@@ -1,10 +1,15 @@
 {-# OPTIONS_GHC -Wunused-imports #-}
 
-module Agda.TypeChecking.DeadCode (eliminateDeadCode) where
+module Agda.TypeChecking.DeadCode
+  ( eliminateDeadCode
+  , checkUnreachableDefinitions
+  , lookupQNameByString
+  ) where
 
 import Control.Monad (filterM)
 import Control.Monad.Trans
 
+import Data.List (isPrefixOf, partition)
 import Data.Maybe
 import qualified Data.Map.Strict as MapS
 import qualified Data.HashMap.Strict as HMap
@@ -12,12 +17,19 @@ import qualified Data.HashMap.Strict as HMap
 import Agda.Syntax.Common
 import Agda.Syntax.Internal
 import Agda.Syntax.Internal.Names
+import Agda.Syntax.Position (getRange, rangeFile, rangeFilePath)
 import Agda.Syntax.Scope.Base
+
+import Agda.Utils.FileName (filePath)
+import qualified Agda.Utils.Maybe.Strict as Strict
 
 import qualified Agda.Benchmarking as Bench
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
+import Agda.Syntax.Common.Pretty (prettyShow)
+
 import Agda.TypeChecking.Monad
+import Agda.TypeChecking.Warnings (warning)
 
 import Agda.Utils.Monad (mapMaybeM)
 import Agda.Utils.Impossible
@@ -144,3 +156,74 @@ remoteMetaVariable !mv = RemoteMetaVariable
   , rmvModality      = getModality mv
   , rmvJudgement     = mvJudgement mv
   }
+
+-- | Look up a QName by its string representation (e.g. "Module.Name.function").
+--   Returns Nothing if no such name exists in the signature.
+lookupQNameByString :: String -> TCM (Maybe QName)
+lookupQNameByString str = do
+  sig <- getSignature
+  let defs = sig ^. sigDefinitions
+      matches = filter (\(qn, _) -> prettyShow qn == str) $ HMap.toList defs
+  case matches of
+    [(qn, _)] -> return $ Just qn
+    _         -> return Nothing
+
+-- | Check for definitions not reachable from a given entry point.
+--   Reports unreachable definitions and unused record fields as warnings.
+--   Only reports definitions whose source file is within the given project directory.
+checkUnreachableDefinitions :: FilePath -> QName -> TCM ()
+checkUnreachableDefinitions projectDir root = do
+  sig <- getSignature
+  let defs = sig ^. sigDefinitions
+
+  -- Build reachability set starting from root only
+  seenNames <- liftIO HT.empty :: TCM (HashTableLU QName ())
+
+  let goName :: QName -> IO ()
+      goName x = HT.insertingIfAbsent seenNames x
+        (\_ -> pure ())
+        (pure ())
+        (\_ -> go (HMap.lookup x defs))
+
+      go :: NamesIn a => a -> IO ()
+      go x = namesIn' goName x
+
+  liftIO $ goName root
+
+  -- Helper to check if a QName's source file is in the project directory
+  let isInProject :: QName -> Bool
+      isInProject qn = case rangeFile (getRange qn) of
+        Strict.Nothing -> False
+        Strict.Just rf -> projectDir `isPrefixOf` filePath (rangeFilePath rf)
+
+  -- Collect all unreachable definitions that are in the project
+  unreachable <- liftIO $ filterM
+    (\(x, _) -> isNothing <$> HT.lookup seenNames x)
+    (HMap.toList defs)
+
+  -- Filter to only definitions in the project directory
+  let unreachableInProject = filter (isInProject . fst) unreachable
+
+  -- Separate record projections from other definitions
+  let isRecordProjection def = case theDef def of
+        Function{ funProjection = Right Projection{ projProper = Just _ } } -> True
+        _ -> False
+
+      (unreachableProjs, unreachableOther) = partition
+        (\(_, def) -> isRecordProjection def)
+        unreachableInProject
+
+  -- Extract record field info from projections
+  let getFieldInfo (name, def) = case theDef def of
+        Function{ funProjection = Right Projection{ projProper = Just recName } } ->
+          Just (recName, qnameName name)
+        _ -> Nothing
+
+      unusedFields = mapMaybe getFieldInfo unreachableProjs
+
+  -- Emit warnings
+  List1.unlessNull (map fst unreachableOther) $ \xs ->
+    warning $ UnreachableDefinitions xs
+
+  List1.unlessNull unusedFields $ \xs ->
+    warning $ UnusedRecordFields xs

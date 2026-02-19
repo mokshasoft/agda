@@ -50,7 +50,9 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 
 import System.Directory (doesFileExist, removeFile)
-import System.FilePath  ( (</>) )
+import System.FilePath  ( (</>) , takeDirectory )
+import System.IO
+import System.IO.Error (isUserError, isFullError)
 
 import Agda.Benchmarking
 
@@ -1272,6 +1274,17 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
     reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Starting serialization."
     i <- Bench.billTo [Bench.Serialization, Bench.BuildInterface] $
       buildInterface src topLevel
+
+    -- Check for dead code if --dead-code option is specified (only for main module)
+    case isMain of
+      MainInterface _ -> do
+        deadCodeOpts <- commandLineOptions
+        whenJust (optDeadCodeRoot deadCodeOpts) $ \rootStr -> do
+          mRoot <- lookupQNameByString rootStr
+          case mRoot of
+            Nothing -> typeError $ CompilationError $ "Entry point for --dead-code not found: " ++ rootStr
+            Just root -> checkUnreachableDefinitions (takeDirectory fp) root
+      NotMainInterface -> pure ()
 
     reportS "tc.top" 101 $
       "Signature:" :

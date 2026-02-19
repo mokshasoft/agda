@@ -384,6 +384,9 @@ data WarningName
   | FaceConstraintCannotBeNamed_
   -- Backends
   | CustomBackendWarning_
+  -- Dead code analysis (--dead-code)
+  | UnreachableDefinitions_
+  | UnusedRecordFields_
   deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 instance NFData WarningName
@@ -623,3 +626,6 @@ warningNameDescription = \case
   FaceConstraintCannotBeNamed_     -> "Face constraint patterns that are given as named arguments."
   -- Backends
   CustomBackendWarning_            -> "Custom warnings from backends."
+  -- Dead code analysis
+  UnreachableDefinitions_          -> "Definitions not reachable from the entry point specified via --dead-code."
+  UnusedRecordFields_              -> "Record fields not projected from the entry point specified via --dead-code."

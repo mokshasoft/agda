@@ -140,6 +140,7 @@ instance EmbPrj Warning where
     FixingCohesion a b c                        -> icodeN 72 FixingCohesion a b c
     FixingPolarity a b c                        -> icodeN 73 FixingPolarity a b c
     RewritesNothing                             -> icodeN 74 RewritesNothing
+    UnreachableDefinitions a                    -> icodeN 75 UnreachableDefinitions a
 
   value = vcase $ \ case
     [0, a, b]            -> valuN UnreachableClauses a b
@@ -218,6 +219,7 @@ instance EmbPrj Warning where
     [72, a, b, c]        -> valuN FixingCohesion a b c
     [73, a, b, c]        -> valuN FixingPolarity a b c
     [74]                 -> valuN RewritesNothing
+    [75, a]              -> valuN UnreachableDefinitions a
     _ -> malformed
 
 instance EmbPrj UselessPublicReason

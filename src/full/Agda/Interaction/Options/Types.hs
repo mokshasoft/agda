@@ -91,6 +91,8 @@ data CommandLineOptions = Options
       -- ^ Should code points that are not supported by the locale be transliterated?
   , optDiagnosticsColour     :: DiagnosticsColours
       -- ^ Configure colour output.
+  , optDeadCodeRoot          :: Maybe String
+      -- ^ Entry point for dead code analysis (@--dead-code=QNAME@).
   }
   deriving (Show, Generic)
 

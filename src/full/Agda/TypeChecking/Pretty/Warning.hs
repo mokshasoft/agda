@@ -686,6 +686,20 @@ prettyWarning = \case
       pwords "too many polarities given in the POLARITY pragma for" ++
       [prettyTCM x]
 
+    UnreachableDefinitions xs -> vcat
+      [ fsep $ pwords "The following" ++
+          pwords (singPlural xs "definition is" "definitions are") ++
+          pwords "not reachable from the entry point:"
+      , nest 2 $ vcat $ map prettyTCM $ List1.toList xs
+      ]
+
+    UnusedRecordFields xs -> vcat
+      [ fsep $ pwords "The following record" ++
+          pwords (singPlural xs "field is" "fields are") ++
+          pwords "not used from the entry point:"
+      , nest 2 $ vcat $ map (\(r, f) -> prettyTCM r <> "." <> pretty f) $ List1.toList xs
+      ]
+
 instance PrettyTCM DataOrRecord_ where
   prettyTCM = \case
     IsData{}   -> "data"

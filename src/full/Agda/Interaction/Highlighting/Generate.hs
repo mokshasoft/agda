@@ -596,6 +596,10 @@ warningHighlighting' b w = case tcWarning w of
   TooManyPolarities _x occs -> deadcodeHighlighting occs
   TopLevelPolarity{} -> errorWarningHighlighting w
 
+  -- Dead code analysis
+  UnreachableDefinitions{} -> mempty  -- definitions may be in other files
+  UnusedRecordFields{} -> mempty  -- fields may be in other files
+
 recordFieldWarningHighlighting ::
   RecordFieldWarning -> HighlightingInfoBuilder
 recordFieldWarningHighlighting = \case

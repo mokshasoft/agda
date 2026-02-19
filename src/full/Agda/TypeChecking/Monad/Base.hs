@@ -4751,6 +4751,12 @@ data Warning
   -- Not source code related
   | CustomBackendWarning String Doc
     -- ^ Used for backend-specific warnings. The string is the backend name.
+
+  -- Dead code analysis (--dead-code)
+  | UnreachableDefinitions (List1 QName)
+    -- ^ Definitions not reachable from the entry point specified via --dead-code.
+  | UnusedRecordFields (List1 (QName, Name))
+    -- ^ Record fields (record type, field name) not projected from the entry point.
   deriving (Show, Generic)
 
 recordFieldWarningToError :: RecordFieldWarning -> TypeError
@@ -4879,6 +4885,8 @@ warningName = \case
 
   -- Backend warnings
   CustomBackendWarning{} -> CustomBackendWarning_
+  UnreachableDefinitions{} -> UnreachableDefinitions_
+  UnusedRecordFields{} -> UnusedRecordFields_
 
 illegalRewriteWarningName :: IllegalRewriteRuleReason -> WarningName
 illegalRewriteWarningName = \case
