@@ -1287,7 +1287,7 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
         whenJust (optDeadCodeRoot deadCodeOpts) $ \rootStr -> do
           mRoot <- lookupQNameByString rootStr
           case mRoot of
-            Nothing -> typeError $ CompilationError $ "Entry point for --dead-code not found: " ++ rootStr
+            Nothing -> genericError $ "Entry point for --dead-code not found: " ++ rootStr
             Just root -> checkUnreachableDefinitions (takeDirectory fp) root
       NotMainInterface -> pure ()
 
