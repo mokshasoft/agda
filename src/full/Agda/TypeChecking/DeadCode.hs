@@ -34,6 +34,7 @@ import Agda.TypeChecking.Warnings (warning)
 import Agda.Utils.Monad (mapMaybeM)
 import Agda.Utils.Impossible
 import Agda.Utils.Lens
+import qualified Agda.Utils.List1 as List1
 
 import Agda.Utils.HashTable (HashTable)
 import qualified Agda.Utils.HashTable as HT
@@ -185,14 +186,15 @@ checkUnreachableDefinitions projectDir root = do
   -- Build reachability set starting from root only
   -- Only recurse into definitions that are within the project directory
   -- to avoid traversing external libraries (which could cause OOM)
-  seenNames <- liftIO HT.empty :: TCM (HashTableLU QName ())
+  seenNames <- liftIO HT.empty :: TCM (HashTable QName ())
 
   let goName :: QName -> IO ()
-      goName x = HT.insertingIfAbsent seenNames x
-        (\_ -> pure ())
-        (pure ())
-        -- Only recurse into definitions within the project directory
-        (\_ -> when (isInProject x) $ go (HMap.lookup x defs))
+      goName x = HT.lookup seenNames x >>= \case
+        Just _ -> pure ()
+        Nothing -> do
+          HT.insert seenNames x ()
+          -- Only recurse into definitions within the project directory
+          when (isInProject x) $ go (HMap.lookup x defs)
 
       go :: NamesIn a => a -> IO ()
       go x = namesIn' goName x

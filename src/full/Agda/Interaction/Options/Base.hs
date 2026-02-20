@@ -1185,9 +1185,6 @@ transliterateFlag o = return $ o { optTransliterate = True }
 deadCodeFlag :: String -> Flag CommandLineOptions
 deadCodeFlag s o = return $ o { optDeadCodeRoot = Just s }
 
-mdOnlyAgdaBlocksFlag :: Bool -> Flag CommandLineOptions
-mdOnlyAgdaBlocksFlag b o = return $ o { optMdOnlyAgdaBlocks = b }
-
 withKFlag :: Flag PragmaOptions
 withKFlag =
   -- with-K is the opposite of --without-K, so collapse default when disabling --without-K
