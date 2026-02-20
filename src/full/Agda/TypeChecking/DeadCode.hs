@@ -143,6 +143,26 @@ eliminateDeadCode !scope = Bench.billTo [Bench.DeadCode] $ do
   !defs  <- liftIO $ HMap.fromList <$> filterM filterDef (HMap.toList defs)
   pure (metas, defs, rootDisplayForms)
 
+-- | Compute the set of reachable names starting from the given roots.
+--   The filter predicate controls which definitions to recurse into.
+--   Pass @const True@ to recurse into all definitions, or a filter like
+--   @isInProject@ to avoid traversing external libraries.
+computeReachableNames
+  :: (QName -> Bool)    -- ^ Should we recurse into this definition's references?
+  -> [QName]            -- ^ Root names to start from
+  -> Definitions        -- ^ All definitions
+  -> IO (HashTable QName ())
+computeReachableNames shouldRecurse roots defs = do
+  seenNames <- HT.empty
+  let goName :: QName -> IO ()
+      goName x = HT.lookup seenNames x >>= \case
+        Just _ -> pure ()
+        Nothing -> do
+          HT.insert seenNames x ()
+          when (shouldRecurse x) $ namesIn' goName (HMap.lookup x defs)
+  mapM_ goName roots
+  return seenNames
+
 -- | Returns the instantiation.
 --   Precondition: The instantiation must be of the form @'InstV' inst@.
 theInstantiation :: MetaVariable -> Instantiation
@@ -216,20 +236,7 @@ checkUnreachableDefinitions projectDir root = do
   -- Build reachability set starting from root only
   -- Only recurse into definitions that are within the project directory
   -- to avoid traversing external libraries (which could cause OOM)
-  seenNames <- liftIO HT.empty :: TCM (HashTable QName ())
-
-  let goName :: QName -> IO ()
-      goName x = HT.lookup seenNames x >>= \case
-        Just _ -> pure ()
-        Nothing -> do
-          HT.insert seenNames x ()
-          -- Only recurse into definitions within the project directory
-          when (isInProject x) $ go (HMap.lookup x defs)
-
-      go :: NamesIn a => a -> IO ()
-      go x = namesIn' goName x
-
-  liftIO $ goName root
+  seenNames <- liftIO $ computeReachableNames isInProject [root] defs
 
   -- Collect all unreachable definitions that are in the project
   unreachable <- liftIO $ filterM
