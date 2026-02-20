@@ -84,6 +84,8 @@ data CommandLineOptions = Options
   , optGenerateVimFile       :: Bool
   , optIgnoreInterfaces      :: Bool
   , optIgnoreAllInterfaces   :: Bool
+  , optWriteInterfaces       :: Bool
+      -- ^ Should interface files be written to the filesystem?
   , optPragmaOptions         :: PragmaOptions
   , optOnlyScopeChecking     :: Bool
       -- ^ Should the top-level module only be scope-checked, and not type-checked?
