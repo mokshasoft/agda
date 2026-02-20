@@ -10,11 +10,13 @@ import Control.Monad (filterM, when)
 import Control.Monad.Trans
 
 import Data.List (isPrefixOf, partition)
+import Data.List.Split (splitOn)
 import Data.Maybe
 import qualified Data.Map.Strict as MapS
 import qualified Data.HashMap.Strict as HMap
 
 import Agda.Syntax.Common
+import qualified Agda.Syntax.Concrete.Name as C
 import Agda.Syntax.Internal
 import Agda.Syntax.Internal.Names
 import Agda.Syntax.Position (getRange, rangeFile, rangeFilePath)
@@ -160,14 +162,31 @@ remoteMetaVariable !mv = RemoteMetaVariable
 
 -- | Look up a QName by its string representation (e.g. "Module.Name.function").
 --   Returns Nothing if no such name exists in the signature.
+--
+--   Uses an optimized two-phase lookup:
+--   1. First filters by the final name part (fast, short string comparison)
+--   2. Then checks the full module path only for remaining candidates
 lookupQNameByString :: String -> TCM (Maybe QName)
 lookupQNameByString str = do
   sig <- getSignature
   let defs = sig ^. sigDefinitions
-      matches = filter (\(qn, _) -> prettyShow qn == str) $ HMap.toList defs
-  case matches of
-    [(qn, _)] -> return $ Just qn
-    _         -> return Nothing
+      -- Split the input "Module.Sub.name" into ["Module", "Sub", "name"]
+      parts = splitOn "." str
+  case parts of
+    [] -> return Nothing
+    _  -> do
+      let lastPart = last parts
+          -- Phase 1: Filter by final name part only (much faster than full prettyShow)
+          -- Use nameCanonical to match Pretty QName instance behavior
+          matchesName qn =
+            C.nameToRawName (nameCanonical (qnameName qn)) == lastPart
+          candidates = filter (matchesName . fst) $ HMap.toList defs
+          -- Phase 2: Check full path for remaining candidates
+          matchesFull qn = prettyShow qn == str
+          matches = filter (matchesFull . fst) candidates
+      case matches of
+        [(qn, _)] -> return $ Just qn
+        _         -> return Nothing
 
 -- | Check for definitions not reachable from a given entry point.
 --   Reports unreachable definitions and unused record fields as warnings.
