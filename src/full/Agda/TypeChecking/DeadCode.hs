@@ -42,6 +42,73 @@ import qualified Agda.Utils.List1 as List1
 import Agda.Utils.HashTable (HashTable)
 import qualified Agda.Utils.HashTable as HT
 
+---------------------------------------------------------------------------
+-- * Reachability traversal
+---------------------------------------------------------------------------
+
+-- | Compute the set of reachable names and metas starting from the given roots.
+--   Traverses both name and meta references using 'namesAndMetasIn''.
+--
+--   The filter predicate controls which definitions to recurse into:
+--   - Pass @const True@ to recurse into all definitions
+--   - Pass a filter like @isInProject@ to avoid traversing external libraries
+computeReachable
+  :: (QName -> Bool)           -- ^ Should we recurse into this definition's references?
+  -> [QName]                   -- ^ Root names to start from
+  -> Definitions               -- ^ All definitions
+  -> MapS.Map MetaId MetaVariable  -- ^ Solved metas
+  -> IO (HashTable QName (), HashTable MetaId ())
+computeReachable shouldRecurse roots defs metas = do
+  seenNames <- HT.empty
+  seenMetas <- HT.empty
+
+  let goName :: QName -> IO ()
+      goName !x = HT.lookup seenNames x >>= \case
+        Just _  -> pure ()
+        Nothing -> do
+          HT.insert seenNames x ()
+          when (shouldRecurse x) $ go (HMap.lookup x defs)
+
+      goMeta :: MetaId -> IO ()
+      goMeta !m = HT.lookup seenMetas m >>= \case
+        Just _  -> pure ()
+        Nothing -> do
+          HT.insert seenMetas m ()
+          case MapS.lookup m metas of
+            Nothing -> pure ()
+            Just mv -> do
+              go (instBody (theInstantiation mv))
+              go (jMetaType (mvJudgement mv))
+
+      go :: NamesIn a => a -> IO ()
+      go !x = namesAndMetasIn' (either goName goMeta) x
+      {-# INLINE go #-}
+
+  mapM_ goName roots
+  return (seenNames, seenMetas)
+
+-- | Returns the instantiation.
+--   Precondition: The instantiation must be of the form @'InstV' inst@.
+theInstantiation :: MetaVariable -> Instantiation
+theInstantiation mv = case mvInstantiation mv of
+  InstV inst                     -> inst
+  OpenMeta{}                     -> __IMPOSSIBLE__
+  BlockedConst{}                 -> __IMPOSSIBLE__
+  PostponedTypeCheckingProblem{} -> __IMPOSSIBLE__
+
+-- | Converts from 'MetaVariable' to 'RemoteMetaVariable'.
+--   Precondition: The instantiation must be of the form @'InstV' inst@.
+remoteMetaVariable :: MetaVariable -> RemoteMetaVariable
+remoteMetaVariable !mv = RemoteMetaVariable
+  { rmvInstantiation = theInstantiation mv
+  , rmvModality      = getModality mv
+  , rmvJudgement     = mvJudgement mv
+  }
+
+---------------------------------------------------------------------------
+-- * Dead code elimination for interface files
+---------------------------------------------------------------------------
+
 -- | Run before serialisation to remove data that's not reachable from the
 --   public interface. We do not compute reachable data precisely, because that
 --   would be very expensive, mainly because of rewrite rules. The following
@@ -93,21 +160,20 @@ eliminateDeadCode !scope = Bench.billTo [Bench.DeadCode] $ do
   !rootBuiltins <- useTC stLocalBuiltins
   !rootPatSyns  <- getPatternSyns
 
-  !seenNames <- liftIO HT.empty :: TCM (HashTable QName ())
-  !seenMetas <- liftIO HT.empty :: TCM (HashTable MetaId ())
+  -- Compute reachability with no filter (traverse everything)
+  (!seenNames, !seenMetas) <- Bench.billTo [Bench.DeadCode, Bench.DeadCodeReachable] $
+    liftIO $ computeReachable (const True) (rootPubNames ++ rootExtraDefs) defs metas
 
-  let goName :: QName -> IO ()
-      goName !x = HT.lookup seenNames x >>= \case
-        Just _ ->
-          pure ()
+  -- Also traverse non-name roots for additional reachable names/metas
+  let go :: NamesIn a => a -> IO ()
+      go !x = namesAndMetasIn' (either goName goMeta) x
+      goName !n = HT.lookup seenNames n >>= \case
+        Just _  -> pure ()
         Nothing -> do
-          HT.insert seenNames x ()
-          go (HMap.lookup x defs)
-
-      goMeta :: MetaId -> IO ()
+          HT.insert seenNames n ()
+          go (HMap.lookup n defs)
       goMeta !m = HT.lookup seenMetas m >>= \case
-        Just _ ->
-          pure ()
+        Just _  -> pure ()
         Nothing -> do
           HT.insert seenMetas m ()
           case MapS.lookup m metas of
@@ -116,18 +182,12 @@ eliminateDeadCode !scope = Bench.billTo [Bench.DeadCode] $ do
               go (instBody (theInstantiation mv))
               go (jMetaType (mvJudgement mv))
 
-      go :: NamesIn a => a -> IO ()
-      go !x = namesAndMetasIn' (either goName goMeta) x
-      {-# INLINE go #-}
-
-  Bench.billTo [Bench.DeadCode, Bench.DeadCodeReachable] $ liftIO $ do
+  liftIO $ do
     go rootDisplayForms
-    foldMap goName rootPubNames
-    foldMap goName rootExtraDefs
     go rootRewrites
     go rootModSections
     go rootBuiltins
-    foldMap (go . PSyn) rootPatSyns
+    mapM_ (go . PSyn) rootPatSyns
 
   let filterMeta :: (MetaId, MetaVariable) -> IO (Maybe (MetaId, RemoteMetaVariable))
       filterMeta (!i, !m) = HT.lookup seenMetas i >>= \case
@@ -139,47 +199,13 @@ eliminateDeadCode !scope = Bench.billTo [Bench.DeadCode] $ do
         Nothing -> pure False
         Just _  -> pure True
 
-  !metas <- liftIO $ HMap.fromList <$> mapMaybeM filterMeta (MapS.toList metas)
-  !defs  <- liftIO $ HMap.fromList <$> filterM filterDef (HMap.toList defs)
-  pure (metas, defs, rootDisplayForms)
+  !metas' <- liftIO $ HMap.fromList <$> mapMaybeM filterMeta (MapS.toList metas)
+  !defs'  <- liftIO $ HMap.fromList <$> filterM filterDef (HMap.toList defs)
+  pure (metas', defs', rootDisplayForms)
 
--- | Compute the set of reachable names starting from the given roots.
---   The filter predicate controls which definitions to recurse into.
---   Pass @const True@ to recurse into all definitions, or a filter like
---   @isInProject@ to avoid traversing external libraries.
-computeReachableNames
-  :: (QName -> Bool)    -- ^ Should we recurse into this definition's references?
-  -> [QName]            -- ^ Root names to start from
-  -> Definitions        -- ^ All definitions
-  -> IO (HashTable QName ())
-computeReachableNames shouldRecurse roots defs = do
-  seenNames <- HT.empty
-  let goName :: QName -> IO ()
-      goName x = HT.lookup seenNames x >>= \case
-        Just _ -> pure ()
-        Nothing -> do
-          HT.insert seenNames x ()
-          when (shouldRecurse x) $ namesIn' goName (HMap.lookup x defs)
-  mapM_ goName roots
-  return seenNames
-
--- | Returns the instantiation.
---   Precondition: The instantiation must be of the form @'InstV' inst@.
-theInstantiation :: MetaVariable -> Instantiation
-theInstantiation mv = case mvInstantiation mv of
-  InstV inst                     -> inst
-  OpenMeta{}                     -> __IMPOSSIBLE__
-  BlockedConst{}                 -> __IMPOSSIBLE__
-  PostponedTypeCheckingProblem{} -> __IMPOSSIBLE__
-
--- | Converts from 'MetaVariable' to 'RemoteMetaVariable'.
---   Precondition: The instantiation must be of the form @'InstV' inst@.
-remoteMetaVariable :: MetaVariable -> RemoteMetaVariable
-remoteMetaVariable !mv = RemoteMetaVariable
-  { rmvInstantiation = theInstantiation mv
-  , rmvModality      = getModality mv
-  , rmvJudgement     = mvJudgement mv
-  }
+---------------------------------------------------------------------------
+-- * Name lookup
+---------------------------------------------------------------------------
 
 -- | Look up a QName by its string representation (e.g. "Module.Name.function").
 --   Returns Nothing if no such name exists in the signature.
@@ -209,6 +235,10 @@ lookupQNameByString str = do
         [(qn, _)] -> return $ Just qn
         _         -> return Nothing
 
+---------------------------------------------------------------------------
+-- * Unreachable code warnings
+---------------------------------------------------------------------------
+
 -- | Check for definitions not reachable from a given entry point.
 --   Reports unreachable definitions and unused record fields as warnings.
 --   Only reports definitions whose source file is within the given project directory.
@@ -216,6 +246,7 @@ checkUnreachableDefinitions :: FilePath -> QName -> TCM ()
 checkUnreachableDefinitions projectDir root = do
   sig <- getSignature
   let defs = sig ^. sigDefinitions
+  metas <- useR stSolvedMetaStore
 
   -- Helper to check if a QName's source file is in the project directory.
   -- Uses makeRelative for robust path comparison:
@@ -236,7 +267,7 @@ checkUnreachableDefinitions projectDir root = do
   -- Build reachability set starting from root only
   -- Only recurse into definitions that are within the project directory
   -- to avoid traversing external libraries (which could cause OOM)
-  seenNames <- liftIO $ computeReachableNames isInProject [root] defs
+  (seenNames, _seenMetas) <- liftIO $ computeReachable isInProject [root] defs metas
 
   -- Collect all unreachable definitions that are in the project
   unreachable <- liftIO $ filterM
