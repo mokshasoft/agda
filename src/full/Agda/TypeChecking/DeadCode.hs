@@ -9,7 +9,7 @@ module Agda.TypeChecking.DeadCode
 import Control.Monad (filterM, when)
 import Control.Monad.Trans
 
-import Data.List (isPrefixOf, partition)
+import Data.List (isPrefixOf)
 import Data.List.Split (splitOn)
 import Data.Maybe
 import qualified Data.Map.Strict as MapS
@@ -198,6 +198,29 @@ lookupQNameByString str = do
 -- * Unreachable code warnings
 ---------------------------------------------------------------------------
 
+-- | Check if a projection is unused (only referenced by its own definition and parent record).
+--   A projection is considered "unused" if no other reachable definition references it.
+isProjectionUnused
+  :: Definitions              -- ^ All definitions
+  -> HT.HashTable QName ()    -- ^ Set of reachable names
+  -> (QName, Definition, QName)  -- ^ (projection name, projection def, parent record name)
+  -> IO Bool
+isProjectionUnused defs seenNames (projName, _projDef, recName) = do
+  -- Check all reachable definitions (except the projection itself and its parent record)
+  -- to see if any of them reference this projection
+  reachableNames <- HT.toList seenNames
+  let relevantNames = [name | (name, ()) <- reachableNames
+                            , name /= projName
+                            , name /= recName]
+
+  -- Check if any relevant definition references this projection
+  let referencesProj :: Definition -> Bool
+      referencesProj def = projName `elem` (namesIn def :: [QName])
+
+      isReferenced = any (\name -> maybe False referencesProj (HMap.lookup name defs)) relevantNames
+
+  return (not isReferenced)
+
 -- | Check for definitions not reachable from a given entry point.
 --   Reports unreachable definitions and unused record fields as warnings.
 --   Only reports definitions whose source file is within the given project directory.
@@ -248,22 +271,35 @@ checkUnreachableDefinitions projectDir root = do
   -- Filter to only definitions in the project directory
   let unreachableInProject = filter (isInProject . fst) unreachable
 
-  -- Separate record projections from other definitions
+  -- For record projections, we need special handling:
+  -- A projection is "reachable" just by being defined (its parent record references it).
+  -- We want to detect projections that are DEFINED but never APPLIED.
+  --
+  -- Strategy: For each projection in the project, check if it's referenced from
+  -- anywhere OTHER than its own definition and its parent record's definition.
+  let getProjectionInfo def = case theDef def of
+        Function{ funProjection = Right Projection{ projProper = Just recName } } ->
+          Just recName
+        _ -> Nothing
+
+      -- All projections in the project (both reachable and unreachable)
+      allProjections = [(name, def, recName)
+                       | (name, def) <- HMap.toList defs
+                       , isInProject name
+                       , Just recName <- [getProjectionInfo def]]
+
+  -- For each projection, check if it has references from non-parent sources
+  -- by re-traversing the signature excluding the projection's own def and parent record
+  unusedProjections <- liftIO $ filterM (isProjectionUnused defs seenNames) allProjections
+
+  let unusedFields = [(recName, qnameName name) | (name, _def, recName) <- unusedProjections]
+
+  -- Separate remaining unreachable definitions (non-projections)
   let isRecordProjection def = case theDef def of
         Function{ funProjection = Right Projection{ projProper = Just _ } } -> True
         _ -> False
 
-      (unreachableProjs, unreachableOther) = partition
-        (\(_, def) -> isRecordProjection def)
-        unreachableInProject
-
-  -- Extract record field info from projections
-  let getFieldInfo (name, def) = case theDef def of
-        Function{ funProjection = Right Projection{ projProper = Just recName } } ->
-          Just (recName, qnameName name)
-        _ -> Nothing
-
-      unusedFields = mapMaybe getFieldInfo unreachableProjs
+      unreachableOther = filter (not . isRecordProjection . snd) unreachableInProject
 
   -- Emit warnings
   List1.unlessNull (map fst unreachableOther) $ \xs ->
