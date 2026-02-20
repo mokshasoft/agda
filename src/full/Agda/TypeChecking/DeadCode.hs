@@ -10,6 +10,7 @@ import Control.Monad (filterM, when)
 import Control.Monad.Trans
 
 import Data.List (isPrefixOf, partition)
+import System.FilePath (isRelative, makeRelative, normalise)
 import Data.List.Split (splitOn)
 import Data.Maybe
 import qualified Data.Map.Strict as MapS
@@ -196,11 +197,21 @@ checkUnreachableDefinitions projectDir root = do
   sig <- getSignature
   let defs = sig ^. sigDefinitions
 
-  -- Helper to check if a QName's source file is in the project directory
-  let isInProject :: QName -> Bool
+  -- Helper to check if a QName's source file is in the project directory.
+  -- Uses makeRelative for robust path comparison:
+  -- - Handles partial directory name matches (e.g., /foo vs /foobar)
+  -- - Normalizes paths to handle //, ., etc.
+  let normalizedProjectDir = normalise projectDir
+      isInProject :: QName -> Bool
       isInProject qn = case rangeFile (getRange qn) of
         Strict.Nothing -> False
-        Strict.Just rf -> projectDir `isPrefixOf` filePath (rangeFilePath rf)
+        Strict.Just rf ->
+          let defPath = normalise $ filePath (rangeFilePath rf)
+              relPath = makeRelative normalizedProjectDir defPath
+          -- makeRelative returns an absolute path if defPath is not under projectDir,
+          -- or returns ".." prefixed path if it escapes. A truly contained path
+          -- will be relative and not start with ".."
+          in isRelative relPath && not (".." `isPrefixOf` relPath)
 
   -- Build reachability set starting from root only
   -- Only recurse into definitions that are within the project directory
