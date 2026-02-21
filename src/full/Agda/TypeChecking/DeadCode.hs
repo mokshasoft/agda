@@ -283,9 +283,11 @@ checkUnreachableDefinitions projectDir root = do
         _ -> Nothing
 
       -- All projections in the project (both reachable and unreachable)
+      -- Filter out defCopy projections (re-exports via module aliases)
       allProjections = [(name, def, recName)
                        | (name, def) <- HMap.toList defs
                        , isInProject name
+                       , not (defCopy def)
                        , Just recName <- [getProjectionInfo def]]
 
   -- For each projection, check if it has references from non-parent sources
