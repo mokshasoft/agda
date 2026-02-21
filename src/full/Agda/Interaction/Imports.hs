@@ -80,6 +80,7 @@ import Agda.TypeChecking.Reduce
 import Agda.TypeChecking.Rewriting.Confluence ( checkConfluenceOfRules, sortRulesOfSymbol )
 import Agda.TypeChecking.MetaVars ( openMetasToPostulates )
 import Agda.TypeChecking.Monad
+import Agda.TypeChecking.Monad.Options (libToTCM)
 import Agda.TypeChecking.Serialise
 import Agda.TypeChecking.Primitive
 import Agda.TypeChecking.Pretty as P
@@ -1288,7 +1289,12 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
           mRoot <- lookupQNameByString rootStr
           case mRoot of
             Nothing -> genericError $ "Entry point for --dead-code not found: " ++ rootStr
-            Just root -> checkUnreachableDefinitions (takeDirectory fp) root
+            Just root -> do
+              -- Use .agda-lib location as project root if available,
+              -- otherwise fall back to the source file's directory
+              mProjectRoot <- libToTCM $ findProjectRoot (takeDirectory fp)
+              let projectDir = fromMaybe (takeDirectory fp) mProjectRoot
+              checkUnreachableDefinitions projectDir root
       NotMainInterface -> pure ()
 
     reportS "tc.top" 101 $
