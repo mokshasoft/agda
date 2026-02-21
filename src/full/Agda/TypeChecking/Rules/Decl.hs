@@ -642,6 +642,9 @@ checkAxiom' gentel kind i info0 mp x e = whenAbstractFreezeMetasAfter i $ defaul
   when (kind == AxiomName) $ do
     whenM ((== SizeUniv) <$> do reduce $ getSort t) $ do
       whenM ((> 0) <$> getContextSize) $ typeError PostulatedSizeInModule
+    -- Warn about postulates if --warn-postulates is set
+    whenM (optWarnPostulates <$> commandLineOptions) $ do
+      warning $ PostulateProofObligation x t
 
   -- get explicitely specified occurences (by looking at polarity annotations, if enabled)
   eoccs <-

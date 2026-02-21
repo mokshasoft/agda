@@ -95,6 +95,8 @@ data CommandLineOptions = Options
       -- ^ Configure colour output.
   , optDeadCodeRoot          :: Maybe String
       -- ^ Entry point for dead code analysis (@--dead-code=QNAME@).
+  , optWarnPostulates        :: Bool
+      -- ^ Warn about postulates, showing their types as proof obligations.
   }
   deriving (Show, Generic)
 

@@ -695,6 +695,7 @@ defaultOptions = Options
   , optTransliterate         = False
   , optDiagnosticsColour     = AutoColour
   , optDeadCodeRoot          = Nothing
+  , optWarnPostulates        = False
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1189,6 +1190,9 @@ transliterateFlag o = return $ o { optTransliterate = True }
 deadCodeFlag :: String -> Flag CommandLineOptions
 deadCodeFlag s o = return $ o { optDeadCodeRoot = Just s }
 
+warnPostulatesFlag :: Flag CommandLineOptions
+warnPostulatesFlag o = return $ o { optWarnPostulates = True }
+
 withKFlag :: Flag PragmaOptions
 withKFlag =
   -- with-K is the opposite of --without-K, so collapse default when disabling --without-K
@@ -1391,6 +1395,8 @@ standardOptions =
 
     , Option []     ["dead-code"] (ReqArg deadCodeFlag "QNAME")
                     "report definitions not reachable from QNAME (e.g. Module.function)"
+    , Option []     ["warn-postulates"] (NoArg warnPostulatesFlag)
+                    "warn about postulates, showing their types as proof obligations"
     ] ++ map (fmap lensPragmaOptions) pragmaOptions
 
 -- | Command line options of previous versions of Agda.

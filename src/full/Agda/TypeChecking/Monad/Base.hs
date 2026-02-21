@@ -4757,6 +4757,10 @@ data Warning
     -- ^ Definitions not reachable from the entry point specified via --dead-code.
   | UnusedRecordFields (List1 (QName, Name))
     -- ^ Record fields (record type, field name) not projected from the entry point.
+
+  -- Postulate warnings (--warn-postulates)
+  | PostulateProofObligation QName Type
+    -- ^ A postulate, shown as a proof obligation with its type.
   deriving (Show, Generic)
 
 recordFieldWarningToError :: RecordFieldWarning -> TypeError
@@ -4887,6 +4891,9 @@ warningName = \case
   CustomBackendWarning{} -> CustomBackendWarning_
   UnreachableDefinitions{} -> UnreachableDefinitions_
   UnusedRecordFields{} -> UnusedRecordFields_
+
+  -- Postulate warnings
+  PostulateProofObligation{} -> PostulateProofObligation_
 
 illegalRewriteWarningName :: IllegalRewriteRuleReason -> WarningName
 illegalRewriteWarningName = \case

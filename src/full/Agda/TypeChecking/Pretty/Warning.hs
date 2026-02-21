@@ -700,6 +700,11 @@ prettyWarning = \case
       , nest 2 $ vcat $ map (\(r, f) -> prettyTCM r <> "." <> pretty f) $ List1.toList xs
       ]
 
+    PostulateProofObligation x t -> vcat
+      [ fsep $ pwords "Proof obligation (postulate):"
+      , nest 2 $ prettyTCM x <+> ":" <+> prettyTCM t
+      ]
+
 instance PrettyTCM DataOrRecord_ where
   prettyTCM = \case
     IsData{}   -> "data"

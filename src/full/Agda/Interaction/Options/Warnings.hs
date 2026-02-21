@@ -387,6 +387,8 @@ data WarningName
   -- Dead code analysis (--dead-code)
   | UnreachableDefinitions_
   | UnusedRecordFields_
+  -- Postulate warnings (--warn-postulates)
+  | PostulateProofObligation_
   deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 instance NFData WarningName
@@ -629,3 +631,5 @@ warningNameDescription = \case
   -- Dead code analysis
   UnreachableDefinitions_          -> "Definitions not reachable from the entry point specified via --dead-code."
   UnusedRecordFields_              -> "Record fields not projected from the entry point specified via --dead-code."
+  -- Postulate warnings
+  PostulateProofObligation_        -> "Postulates shown as proof obligations with their types."
