@@ -226,8 +226,10 @@ isProjectionUnused defs seenNames (projName, _projDef, recName) = do
 --   Only reports definitions whose source file is within the given project directory.
 checkUnreachableDefinitions :: FilePath -> QName -> TCM ()
 checkUnreachableDefinitions projectDir root = do
+  -- Get definitions from both current module and imported modules
   sig <- getSignature
-  let defs = sig ^. sigDefinitions
+  importedSig <- useTC stImports
+  let defs = HMap.union (sig ^. sigDefinitions) (importedSig ^. sigDefinitions)
 
   -- Helper to check if a QName's source file is in the project directory.
   -- Uses makeRelative for robust path comparison:
