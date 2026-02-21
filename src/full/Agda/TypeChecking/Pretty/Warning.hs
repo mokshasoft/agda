@@ -701,7 +701,7 @@ prettyWarning = \case
       ]
 
     PostulateProofObligation x t -> vcat
-      [ fsep $ pwords "Proof obligation (postulate):"
+      [ "Postulate:"
       , nest 2 $ prettyTCM x <+> ":" <+> prettyTCM t
       ]
 
