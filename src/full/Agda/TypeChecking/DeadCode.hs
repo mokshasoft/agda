@@ -294,12 +294,16 @@ checkUnreachableDefinitions projectDir root = do
 
   let unusedFields = [(recName, qnameName name) | (name, _def, recName) <- unusedProjections]
 
-  -- Separate remaining unreachable definitions (non-projections)
+  -- Separate remaining unreachable definitions (non-projections and non-copies)
+  -- defCopy marks definitions created by module application (e.g., "module M = OtherModule"),
+  -- which are re-exports rather than real definitions. We exclude them since the original
+  -- definition will be reported if truly unreachable.
   let isRecordProjection def = case theDef def of
         Function{ funProjection = Right Projection{ projProper = Just _ } } -> True
         _ -> False
 
-      unreachableOther = filter (not . isRecordProjection . snd) unreachableInProject
+      unreachableOther = filter (\(_, def) ->
+        not (isRecordProjection def) && not (defCopy def)) unreachableInProject
 
   -- Emit warnings
   List1.unlessNull (map fst unreachableOther) $ \xs ->
