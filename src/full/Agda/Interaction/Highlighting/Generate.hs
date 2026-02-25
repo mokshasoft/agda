@@ -600,6 +600,9 @@ warningHighlighting' b w = case tcWarning w of
   UnreachableDefinitions{} -> mempty  -- definitions may be in other files
   UnusedRecordFields{} -> mempty  -- fields may be in other files
 
+  -- Postulate warnings (--warn-postulates)
+  PostulateProofObligation{} -> mempty  -- just informational, no highlighting needed
+
 recordFieldWarningHighlighting ::
   RecordFieldWarning -> HighlightingInfoBuilder
 recordFieldWarningHighlighting = \case
