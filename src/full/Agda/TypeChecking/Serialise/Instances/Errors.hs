@@ -141,6 +141,8 @@ instance EmbPrj Warning where
     FixingPolarity a b c                        -> icodeN 73 FixingPolarity a b c
     RewritesNothing                             -> icodeN 74 RewritesNothing
     UnreachableDefinitions a                    -> icodeN 75 UnreachableDefinitions a
+    UnusedRecordFields a                        -> icodeN 76 UnusedRecordFields a
+    PostulateProofObligation a b                -> icodeN 77 PostulateProofObligation a b
 
   value = vcase $ \ case
     [0, a, b]            -> valuN UnreachableClauses a b
@@ -220,6 +222,8 @@ instance EmbPrj Warning where
     [73, a, b, c]        -> valuN FixingPolarity a b c
     [74]                 -> valuN RewritesNothing
     [75, a]              -> valuN UnreachableDefinitions a
+    [76, a]              -> valuN UnusedRecordFields a
+    [77, a, b]           -> valuN PostulateProofObligation a b
     _ -> malformed
 
 instance EmbPrj UselessPublicReason
