@@ -1,0 +1,1 @@
+--write-ast=WriteASTTransitive.main --ast-file=/dev/null

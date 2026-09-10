@@ -705,6 +705,13 @@ prettyWarning = \case
       , nest 2 $ prettyTCM x <+> ":" <+> prettyTCM t
       ]
 
+    ReachableTrustBase xs -> vcat
+      [ fsep $ pwords "The entry point depends on the following" ++
+          pwords (singPlural xs "assumption:" "assumptions:")
+      , nest 2 $ vcat $
+          map (\ (x, m) -> text m <+> prettyTCM x) $ List1.toList xs
+      ]
+
 instance PrettyTCM DataOrRecord_ where
   prettyTCM = \case
     IsData{}   -> "data"

@@ -1,0 +1,1 @@
+--write-ast=WriteASTRecordFields.main --ast-file=/dev/null

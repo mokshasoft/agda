@@ -2411,6 +2411,9 @@ data Definition = Defn
     --   in the type.
   , defLanguage       :: !Language
     -- ^ The language used for the definition.
+  , defUnsafePragmas  :: SmallSet UnsafePragma
+    -- ^ Declaration-level pragmas that @--safe@ would reject.
+    --   See 'UnsafePragma'.
   , theDef            :: Defn
   }
     deriving (Show, Generic)
@@ -2455,6 +2458,7 @@ defaultDefn info x t lang def = Defn
   , defCopatternLHS   = False
   , defBlocked        = NotBlocked ReallyNotBlocked ()
   , defLanguage       = lang
+  , defUnsafePragmas  = SmallSet.empty
   , theDef            = def
   }
 
@@ -2605,6 +2609,28 @@ data FunctionFlag
 
 instance SmallSetElement FunctionFlag
 instance KillRange (SmallSet FunctionFlag) where killRange = id
+
+-- | Declaration-level pragmas that @--safe@ rejects.
+--
+--   These are consumed during type checking and leave no other trace on a
+--   'Definition', so they are recorded here for consumers that need to report
+--   the trust base of a definition (see @--write-ast@).  Note in particular
+--   that 'funTerminates' cannot express 'UnsafeTerminating': @TERMINATING@
+--   and @NO_TERMINATION_CHECK@ both record @Just True@, exactly like a
+--   genuinely checked function (see 'Agda.Termination.TermCheck.termMutual').
+--
+--   @INJECTIVE@ is deliberately absent: it is already recoverable from
+--   'defInjective', which nothing but the pragma ever sets.
+data UnsafePragma
+  = UnsafeNoPositivityCheck  -- ^ @NO_POSITIVITY_CHECK@.
+  | UnsafeNoUniverseCheck    -- ^ @NO_UNIVERSE_CHECK@.
+  | UnsafeNonCovering        -- ^ @NON_COVERING@.
+  | UnsafeTerminating        -- ^ @TERMINATING@ or @NO_TERMINATION_CHECK@.
+  | UnsafeNonTerminating     -- ^ @NON_TERMINATING@.
+  deriving (Eq, Ord, Enum, Show, Generic, Ix, Bounded)
+
+instance SmallSetElement UnsafePragma
+instance KillRange (SmallSet UnsafePragma) where killRange = id
 
 data CompKit = CompKit
   { nameOfHComp :: Maybe QName
@@ -3088,6 +3114,7 @@ instance Pretty Definition where
       , "defMatchable      =" <?> pshow (Set.toList defMatchable)
       , "defInjective      =" <?> pshow defInjective
       , "defCopatternLHS   =" <?> pshow defCopatternLHS
+      , "defUnsafePragmas  =" <?> pshow (SmallSet.toList defUnsafePragmas)
       , "theDef            =" <?> pretty theDef ] <+> "}"
 
 instance Pretty Defn where
@@ -4761,6 +4788,12 @@ data Warning
   -- Postulate warnings (--warn-postulates)
   | PostulateProofObligation QName Type
     -- ^ A postulate, shown as a proof obligation with its type.
+
+  -- AST dump (--write-ast)
+  | ReachableTrustBase (List1 (QName, String))
+    -- ^ Assumptions (postulates, unsafe definitions) reachable from the
+    --   entry point given to @--write-ast@, paired with a description of
+    --   why each one is an assumption.
   deriving (Show, Generic)
 
 recordFieldWarningToError :: RecordFieldWarning -> TypeError
@@ -4894,6 +4927,9 @@ warningName = \case
 
   -- Postulate warnings
   PostulateProofObligation{} -> PostulateProofObligation_
+
+  -- AST dump
+  ReachableTrustBase{} -> ReachableTrustBase_
 
 illegalRewriteWarningName :: IllegalRewriteRuleReason -> WarningName
 illegalRewriteWarningName = \case
@@ -6451,8 +6487,8 @@ instance KillRange InstanceInfo where
   killRange (InstanceInfo a b) = killRangeN InstanceInfo a b
 
 instance KillRange Definition where
-  killRange (Defn ai name t pols occs gpars displ mut compiled inst copy ma nc inj copat blk lang def) =
-    killRangeN Defn ai name t pols occs gpars displ mut compiled inst copy ma nc inj copat blk lang def
+  killRange (Defn ai name t pols occs gpars displ mut compiled inst copy ma nc inj copat blk lang up def) =
+    killRangeN Defn ai name t pols occs gpars displ mut compiled inst copy ma nc inj copat blk lang up def
     -- TODO clarify: Keep the range in the defName field?
 
 instance KillRange NumGeneralizableArgs where

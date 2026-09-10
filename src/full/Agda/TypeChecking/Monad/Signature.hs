@@ -59,6 +59,7 @@ import {-# SOURCE #-} Agda.TypeChecking.Opacity
 import {-# SOURCE #-} Agda.TypeChecking.Telescope
 
 import Agda.Utils.CallStack.Base
+import qualified Agda.Utils.SmallSet as SmallSet
 import Agda.Utils.Either
 import Agda.Utils.Function ( applyWhen )
 import Agda.Utils.Functor
@@ -203,6 +204,12 @@ setTerminates q b = modifySignature $ updateDefinition q $ updateTheDef $ \case
     def@Function{} -> def { funTerminates = Just b }
     def@Record{}   -> def { recTerminates = Just b }
     def -> def
+
+-- | Record that a declaration-level unsafe pragma was applied to a definition.
+--   See 'UnsafePragma'.
+addUnsafePragma :: MonadTCState m => QName -> UnsafePragma -> m ()
+addUnsafePragma q p = modifySignature $ updateDefinition q $ \ def ->
+  def { defUnsafePragmas = SmallSet.insert p (defUnsafePragmas def) }
 
 -- | Set CompiledClauses of a defined function symbol.
 setCompiledClauses :: QName -> CompiledClauses -> TCM ()
@@ -590,6 +597,9 @@ applySection' new ptel old ts ScopeCopyInfo{ renNames = rd, renModules = rm } = 
                     , defMatchable      = Set.empty
                     , defNoCompilation  = defNoCompilation d
                     , defInjective      = False
+                      -- A copy of e.g. a NON_TERMINATING definition is still
+                      -- non-terminating, so the pragmas carry over.
+                    , defUnsafePragmas  = defUnsafePragmas d
                     , defCopatternLHS   = isCopatternLHS [cl]
                     , defBlocked        = defBlocked d
                     , defLanguage       =

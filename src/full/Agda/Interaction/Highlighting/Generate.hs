@@ -603,6 +603,9 @@ warningHighlighting' b w = case tcWarning w of
   -- Postulate warnings (--warn-postulates)
   PostulateProofObligation{} -> mempty  -- just informational, no highlighting needed
 
+  -- AST dump (--write-ast)
+  ReachableTrustBase{} -> mempty  -- assumptions may be in other files
+
 recordFieldWarningHighlighting ::
   RecordFieldWarning -> HighlightingInfoBuilder
 recordFieldWarningHighlighting = \case

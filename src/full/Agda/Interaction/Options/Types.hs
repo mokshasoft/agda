@@ -97,6 +97,12 @@ data CommandLineOptions = Options
       -- ^ Entry point for dead code analysis (@--dead-code=QNAME@).
   , optWarnPostulates        :: Bool
       -- ^ Warn about postulates, showing their types as proof obligations.
+  , optWriteAST              :: Maybe String
+      -- ^ Entry point for the AST dump (@--write-ast=QNAME@).
+  , optASTFile               :: FilePath
+      -- ^ Where to write the AST dump (@--ast-file=PATH@).
+  , optASTFormat             :: ASTFormat
+      -- ^ Output format for the AST dump (@--ast-format=json|text@).
   }
   deriving (Show, Generic)
 
@@ -247,6 +253,12 @@ data DiagnosticsColours
   | AutoColour
   deriving (Show, Generic)
 
+-- | Output format for @--write-ast@.
+data ASTFormat
+  = ASTFormatJSON
+  | ASTFormatText
+  deriving (Show, Eq, Generic)
+
 -- | If several @--emacs-mode@ commands are given,
 --   they are executed in the order as given in this datatype.
 data EmacsModeCommand
@@ -307,6 +319,7 @@ instance NFData PragmaOptions
 
 instance NFData ConfluenceCheck
 instance NFData DiagnosticsColours
+instance NFData ASTFormat
 instance NFData EmacsModeCommand
 instance NFData InfectiveCoinfective
 instance NFData PrintAgdaVersion

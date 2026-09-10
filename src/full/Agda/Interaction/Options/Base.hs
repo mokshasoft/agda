@@ -696,6 +696,9 @@ defaultOptions = Options
   , optDiagnosticsColour     = AutoColour
   , optDeadCodeRoot          = Nothing
   , optWarnPostulates        = False
+  , optWriteAST              = Nothing
+  , optASTFile               = "agda-ast.json"
+  , optASTFormat             = ASTFormatJSON
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1193,6 +1196,19 @@ deadCodeFlag s o = return $ o { optDeadCodeRoot = Just s }
 warnPostulatesFlag :: Flag CommandLineOptions
 warnPostulatesFlag o = return $ o { optWarnPostulates = True }
 
+writeASTFlag :: String -> Flag CommandLineOptions
+writeASTFlag s o = return $ o { optWriteAST = Just s }
+
+astFileFlag :: FilePath -> Flag CommandLineOptions
+astFileFlag s o = return $ o { optASTFile = s }
+
+astFormatFlag :: String -> Flag CommandLineOptions
+astFormatFlag s o = case s of
+  "json" -> return $ o { optASTFormat = ASTFormatJSON }
+  "text" -> return $ o { optASTFormat = ASTFormatText }
+  _      -> throwError $
+    "unknown argument to --ast-format: " ++ s ++ " (expected 'json' or 'text')"
+
 withKFlag :: Flag PragmaOptions
 withKFlag =
   -- with-K is the opposite of --without-K, so collapse default when disabling --without-K
@@ -1397,6 +1413,12 @@ standardOptions =
                     "report definitions not reachable from QNAME (e.g. Module.function)"
     , Option []     ["warn-postulates"] (NoArg warnPostulatesFlag)
                     "warn about postulates, showing their types as proof obligations"
+    , Option []     ["write-ast"] (ReqArg writeASTFlag "QNAME")
+                    "write the AST reachable from QNAME, with its trust base"
+    , Option []     ["ast-file"] (ReqArg astFileFlag "PATH")
+                    "where to write the --write-ast output, or - for stdout (default: agda-ast.json)"
+    , Option []     ["ast-format"] (ReqArg astFormatFlag "json|text")
+                    "format for the --write-ast output. The default is json."
     ] ++ map (fmap lensPragmaOptions) pragmaOptions
 
 -- | Command line options of previous versions of Agda.

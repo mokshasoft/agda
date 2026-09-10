@@ -162,9 +162,15 @@ checkDecl d = setCurrentRange d $ do
       A.Pragma i p             -> none $ checkPragma i p
       A.ScopedDecl scope ds    -> none $ setScope scope >> mapM_ checkDeclCached ds
       A.FunDef i x cs          -> impossible $ check x i $ checkFunDef i x cs
-      A.DataDef i x uc ps cs   -> impossible $ check x i $ checkDataDef i x uc ps cs
+      A.DataDef i x uc ps cs   -> impossible $ check x i $ do
+                                    checkDataDef i x uc ps cs
+                                    -- After checkDataDef: it installs the final
+                                    -- Definition via addConstant', which would
+                                    -- discard anything recorded beforehand.
+                                    recordNoUniverseCheck uc x
       A.RecDef i x uc dir ps tel cs -> impossible $ check x i $ do
                                     checkRecDef i x uc dir ps tel cs
+                                    recordNoUniverseCheck uc x
                                     blockId <- defMutual <$> getConstInfo x
 
                                     -- Andreas, 2016-10-01 testing whether
@@ -857,6 +863,14 @@ checkPragma r p = do
 --
 -- All definitions which have so far been assigned to the given mutual
 -- block are returned.
+-- | Record @NO_UNIVERSE_CHECK@ on a data or record definition, so that
+--   consumers such as @--write-ast@ can report it as part of the trust base.
+--   'UniverseCheck' is passed to 'checkDataDef'/'checkRecDef' but is not
+--   retained on the resulting 'Definition'.
+recordNoUniverseCheck :: UniverseCheck -> QName -> TCM ()
+recordNoUniverseCheck uc x =
+  when (uc == NoUniverseCheck) $ addUnsafePragma x UnsafeNoUniverseCheck
+
 checkMutual :: Info.MutualInfo -> [A.Declaration] -> TCM (MutualId, Set QName)
 checkMutual i ds = inMutualBlock $ \ blockId -> defaultOpenLevelsToZero $ do
 
@@ -869,7 +883,18 @@ checkMutual i ds = inMutualBlock $ \ blockId -> defaultOpenLevelsToZero $ do
           . set eCoverageCheck (Info.mutualCoverageCheck i)) $
     mapM_ checkDecl ds
 
-  (blockId, ) . mutualNames <$> lookupMutualBlock blockId
+  names <- mutualNames <$> lookupMutualBlock blockId
+
+  -- Record the block's unsafe pragmas on each definition it covers.  MutualInfo
+  -- is held in stMutualBlocks, which is not serialised into interfaces, so
+  -- consumers that cross module boundaries (--write-ast) cannot read it there.
+  let blockPragmas = concat
+        [ [ UnsafeNoPositivityCheck | Info.mutualPositivityCheck i == NoPositivityCheck ]
+        , [ UnsafeNonCovering       | Info.mutualCoverageCheck   i == NoCoverageCheck   ]
+        ]
+  forM_ names $ \ q -> mapM_ (addUnsafePragma q) blockPragmas
+
+  return (blockId, names)
 
     -- check record or data type signature
 checkSig ::

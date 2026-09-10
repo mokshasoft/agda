@@ -1,0 +1,7 @@
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]ReachableTrustBase
+The entry point depends on the following assumptions:
+  postulate WeirdTy
+  postulate usedAxiom

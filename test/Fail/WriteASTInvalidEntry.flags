@@ -1,0 +1,1 @@
+--write-ast=WriteASTInvalidEntry.nonExistent --ast-file=/dev/null

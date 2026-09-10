@@ -143,6 +143,7 @@ instance EmbPrj Warning where
     UnreachableDefinitions a                    -> icodeN 75 UnreachableDefinitions a
     UnusedRecordFields a                        -> icodeN 76 UnusedRecordFields a
     PostulateProofObligation a b                -> icodeN 77 PostulateProofObligation a b
+    ReachableTrustBase a                        -> icodeN 78 ReachableTrustBase a
 
   value = vcase $ \ case
     [0, a, b]            -> valuN UnreachableClauses a b
@@ -224,6 +225,7 @@ instance EmbPrj Warning where
     [75, a]              -> valuN UnreachableDefinitions a
     [76, a]              -> valuN UnusedRecordFields a
     [77, a, b]           -> valuN PostulateProofObligation a b
+    [78, a]              -> valuN ReachableTrustBase a
     _ -> malformed
 
 instance EmbPrj UselessPublicReason

@@ -389,6 +389,8 @@ data WarningName
   | UnusedRecordFields_
   -- Postulate warnings (--warn-postulates)
   | PostulateProofObligation_
+  -- AST dump (--write-ast)
+  | ReachableTrustBase_
   deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 instance NFData WarningName
@@ -633,3 +635,5 @@ warningNameDescription = \case
   UnusedRecordFields_              -> "Record fields not projected from the entry point specified via --dead-code."
   -- Postulate warnings
   PostulateProofObligation_        -> "Postulates shown as proof obligations with their types."
+  -- AST dump
+  ReachableTrustBase_              -> "Assumptions reachable from the entry point specified via --write-ast."

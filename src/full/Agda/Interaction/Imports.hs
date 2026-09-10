@@ -49,7 +49,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 
-import System.Directory (doesFileExist, removeFile)
+import System.Directory (doesDirectoryExist, doesFileExist, removeFile)
 import System.FilePath  ( (</>) , takeDirectory )
 import System.IO
 import System.IO.Error (isUserError, isFullError)
@@ -84,6 +84,7 @@ import Agda.TypeChecking.Monad.Options (libToTCM)
 import Agda.TypeChecking.Serialise
 import Agda.TypeChecking.Primitive
 import Agda.TypeChecking.Pretty as P
+import Agda.TypeChecking.ASTDump (writeASTDump)
 import Agda.TypeChecking.DeadCode
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
@@ -127,6 +128,33 @@ ignoreInterfaces = optIgnoreInterfaces <$> commandLineOptions
 
 ignoreAllInterfaces :: HasOptions m => m Bool
 ignoreAllInterfaces = optIgnoreAllInterfaces <$> commandLineOptions
+
+-- | The root of the git repository containing the given directory, if any.
+--
+--   This is what delimits "the project" for @--dead-code@ and @--write-ast@:
+--   a repository is the unit the user can actually edit, whereas an
+--   @.agda-lib@ may sit in a subdirectory or be absent altogether.
+--   A @.git@ entry may be a directory or, in a worktree or submodule, a file.
+gitRepoRoot :: FilePath -> IO (Maybe FilePath)
+gitRepoRoot = go (256 :: Int)
+  where
+    go 0 _   = pure Nothing
+    go n dir = do
+      let dotGit = dir </> ".git"
+      found <- orM [ doesDirectoryExist dotGit, doesFileExist dotGit ]
+      if found then pure (Just dir) else do
+        let up = takeDirectory dir
+        if up == dir then pure Nothing else go (n - 1) up
+
+-- | Directory delimiting the project for the reachability analyses:
+--   the enclosing git repository, else the @.agda-lib@ location, else the
+--   source file's own directory.
+analysisProjectDir :: FilePath -> TCM FilePath
+analysisProjectDir srcDir = do
+  mGit <- liftIO $ gitRepoRoot srcDir
+  case mGit of
+    Just root -> pure root
+    Nothing   -> fromMaybe srcDir <$> libToTCM (findProjectRoot srcDir)
 
 -- | Whether to write interface files (@.agdai@)
 
@@ -1290,11 +1318,18 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
           case mRoot of
             Nothing -> genericError $ "Entry point for --dead-code not found: " ++ rootStr
             Just root -> do
-              -- Use .agda-lib location as project root if available,
-              -- otherwise fall back to the source file's directory
-              mProjectRoot <- libToTCM $ findProjectRoot (takeDirectory fp)
-              let projectDir = fromMaybe (takeDirectory fp) mProjectRoot
+              projectDir <- analysisProjectDir (takeDirectory fp)
               checkUnreachableDefinitions projectDir root
+
+        -- Write the reachable AST if --write-ast is specified.
+        whenJust (optWriteAST deadCodeOpts) $ \rootStr -> do
+          mRoot <- lookupQNameByString rootStr
+          case mRoot of
+            Nothing -> genericError $ "Entry point for --write-ast not found: " ++ rootStr
+            Just root -> do
+              projectDir <- analysisProjectDir (takeDirectory fp)
+              writeASTDump projectDir (optASTFile deadCodeOpts)
+                           (optASTFormat deadCodeOpts) root
       NotMainInterface -> pure ()
 
     reportS "tc.top" 101 $
