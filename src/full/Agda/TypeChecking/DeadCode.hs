@@ -4,12 +4,17 @@ module Agda.TypeChecking.DeadCode
   ( eliminateDeadCode
   , checkUnreachableDefinitions
   , lookupQNameByString
+    -- * Attributing names to source files
+  , ModuleFileTable
+  , moduleFileTable
+  , sourceOfQName
+  , qnameInProject
   ) where
 
 import Control.Monad (filterM, when)
 import Control.Monad.Trans
 
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, sortOn)
 import Data.List.Split (splitOn)
 import Data.Maybe
 import qualified Data.Map.Strict as MapS
@@ -163,6 +168,46 @@ remoteMetaVariable !mv = RemoteMetaVariable
   }
 
 ---------------------------------------------------------------------------
+-- * Attributing names to source files
+---------------------------------------------------------------------------
+
+-- | Maps a top-level module name to its source file, longest name first.
+type ModuleFileTable = [(String, FilePath)]
+
+-- | Build the module-to-file table.
+--
+--   Ranges must not be used for this.  A definition imported from another
+--   module may carry no range at all, or a range pointing at the /importing/
+--   file, so attributing names to files via 'getRange' misfiles every imported
+--   definition.  The module name is reliable, so we resolve through
+--   'stModuleToSource' instead.
+moduleFileTable :: TCM ModuleFileTable
+moduleFileTable = do
+  m2s <- useTC stModuleToSource
+  ids <- useTC stModuleToSourceId
+  -- Only keys of stModuleToSourceId may be passed to topLevelModuleFilePath.
+  pure $ sortOn (negate . length . fst)
+    [ (prettyShow m, normalise $ filePath $ topLevelModuleFilePath m2s m)
+    | m <- MapS.keys ids
+    ]
+
+-- | Source file of a name, resolved through its module.
+sourceOfQName :: ModuleFileTable -> QName -> Maybe FilePath
+sourceOfQName tbl qn = listToMaybe
+    [ f | (m, f) <- tbl, mn == m || (m ++ ".") `isPrefixOf` mn ]
+  where
+    -- Sorted longest-first, so the first hit is the most specific module.
+    mn = prettyShow (qnameModule qn)
+
+-- | Is this name defined inside the given project directory?
+qnameInProject :: FilePath -> ModuleFileTable -> QName -> Bool
+qnameInProject projectDir tbl qn = case sourceOfQName tbl qn of
+  Nothing -> False
+  Just p  ->
+    let rel = makeRelative (normalise projectDir) p
+    in isRelative rel && not (".." `isPrefixOf` rel)
+
+---------------------------------------------------------------------------
 -- * Name lookup
 ---------------------------------------------------------------------------
 
@@ -235,17 +280,9 @@ checkUnreachableDefinitions projectDir root = do
   -- Uses makeRelative for robust path comparison:
   -- - Handles partial directory name matches (e.g., /foo vs /foobar)
   -- - Normalizes paths to handle //, ., etc.
-  let normalizedProjectDir = normalise projectDir
-      isInProject :: QName -> Bool
-      isInProject qn = case rangeFile (getRange qn) of
-        Strict.Nothing -> False
-        Strict.Just rf ->
-          let defPath = normalise $ filePath (rangeFilePath rf)
-              relPath = makeRelative normalizedProjectDir defPath
-          -- makeRelative returns an absolute path if defPath is not under projectDir,
-          -- or returns ".." prefixed path if it escapes. A truly contained path
-          -- will be relative and not start with ".."
-          in isRelative relPath && not (".." `isPrefixOf` relPath)
+  modTable <- moduleFileTable
+  let isInProject :: QName -> Bool
+      isInProject = qnameInProject projectDir modTable
 
   -- Build reachability set starting from root only
   -- Only recurse into definitions that are within the project directory

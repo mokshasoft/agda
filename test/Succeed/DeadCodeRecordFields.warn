@@ -1,0 +1,6 @@
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]UnusedRecordFields
+The following record field is not used from the entry point:
+  Point.z
