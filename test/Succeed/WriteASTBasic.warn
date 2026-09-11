@@ -2,5 +2,6 @@
 ———— All done; warnings encountered ————————————————————————
 
 warning: -W[no]ReachableTrustBase
-The entry point depends on the following assumption:
-  postulate reachedAxiom
+The entry point depends on 1 assumption:
+  to discharge:
+    postulate reachedAxiom

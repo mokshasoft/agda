@@ -867,9 +867,11 @@ checkPragma r p = do
 --   consumers such as @--write-ast@ can report it as part of the trust base.
 --   'UniverseCheck' is passed to 'checkDataDef'/'checkRecDef' but is not
 --   retained on the resulting 'Definition'.
+--   The site is the definition itself: @NO_UNIVERSE_CHECK@ attaches to one
+--   data or record declaration, not to a mutual block.
 recordNoUniverseCheck :: UniverseCheck -> QName -> TCM ()
 recordNoUniverseCheck uc x =
-  when (uc == NoUniverseCheck) $ addUnsafePragma x UnsafeNoUniverseCheck
+  when (uc == NoUniverseCheck) $ addUnsafePragma x UnsafeNoUniverseCheck x
 
 checkMutual :: Info.MutualInfo -> [A.Declaration] -> TCM (MutualId, Set QName)
 checkMutual i ds = inMutualBlock $ \ blockId -> defaultOpenLevelsToZero $ do
@@ -888,11 +890,16 @@ checkMutual i ds = inMutualBlock $ \ blockId -> defaultOpenLevelsToZero $ do
   -- Record the block's unsafe pragmas on each definition it covers.  MutualInfo
   -- is held in stMutualBlocks, which is not serialised into interfaces, so
   -- consumers that cross module boundaries (--write-ast) cannot read it there.
+  --
+  -- Every definition in the block records the same site, so that a consumer
+  -- counts one assumption per pragma rather than one per definition covered.
   let blockPragmas = concat
         [ [ UnsafeNoPositivityCheck | Info.mutualPositivityCheck i == NoPositivityCheck ]
         , [ UnsafeNonCovering       | Info.mutualCoverageCheck   i == NoCoverageCheck   ]
         ]
-  forM_ names $ \ q -> mapM_ (addUnsafePragma q) blockPragmas
+  unless (null blockPragmas) $
+    whenJustM (pragmaSite names) $ \ site ->
+      forM_ names $ \ q -> forM_ blockPragmas $ \ p -> addUnsafePragma q p site
 
   return (blockId, names)
 

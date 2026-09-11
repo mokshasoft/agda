@@ -705,12 +705,41 @@ prettyWarning = \case
       , nest 2 $ prettyTCM x <+> ":" <+> prettyTCM t
       ]
 
-    ReachableTrustBase xs -> vcat
-      [ fsep $ pwords "The entry point depends on the following" ++
-          pwords (singPlural xs "assumption:" "assumptions:")
-      , nest 2 $ vcat $
-          map (\ (x, m) -> text m <+> prettyTCM x) $ List1.toList xs
+    ReachableTrustBase xs -> vcat $ concat
+      [ [ fsep $ pwords "The entry point depends on" ++
+            [ pretty (length items) ] ++
+            pwords (singPlural items "assumption:" "assumptions:") ]
+      , section "to discharge" obligations
+      , section "taken on trust" assertions
       ]
+      where
+        items = List1.toList xs
+        (obligations, assertions) = List.partition tbObligation items
+
+        -- An assumption is one site, however many definitions inherit it, so
+        -- what is listed is the site and what it covers -- not one line per
+        -- definition, which for a pragma over a mutual block would report the
+        -- same assumption many times over.
+        section _     [] = []
+        section title ys =
+          [ nest 2 $ vcat $ (text (title ++ ":") :) $ map (nest 2 . item) ys ]
+
+        item y = hsep
+          [ text (tbMarker y)
+          , prettyTCM (tbSite y)
+          , covers y
+          ]
+
+        covers y =
+          case filter (not . null)
+                 [ plural (tbCovered y)   "more definition"
+                 , plural (tbGenerated y) "generated definition"
+                 ] of
+            [] -> empty
+            ds -> parens $ fsep $ punctuate "," $ map text ds
+
+        plural 0 _    = ""
+        plural n what = show n ++ " " ++ what ++ (if n == 1 then "" else "s")
 
 instance PrettyTCM DataOrRecord_ where
   prettyTCM = \case

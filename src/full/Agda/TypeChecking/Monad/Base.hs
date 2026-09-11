@@ -2411,9 +2411,16 @@ data Definition = Defn
     --   in the type.
   , defLanguage       :: !Language
     -- ^ The language used for the definition.
-  , defUnsafePragmas  :: SmallSet UnsafePragma
-    -- ^ Declaration-level pragmas that @--safe@ would reject.
-    --   See 'UnsafePragma'.
+  , defUnsafePragmas  :: Map UnsafePragma QName
+    -- ^ Declaration-level pragmas that @--safe@ would reject, each mapped to
+    --   the /site/ it was written at: a canonical, source-level member of the
+    --   declaration group the pragma covers.  See 'UnsafePragma'.
+    --
+    --   The site is what makes the pragma countable.  One pragma covers a
+    --   whole mutual block, and elaboration then adds with-functions and
+    --   other helpers to that block, so the number of definitions carrying a
+    --   pragma says nothing about how many the user wrote.  Definitions that
+    --   share a site share one assumption.
   , theDef            :: Defn
   }
     deriving (Show, Generic)
@@ -2458,7 +2465,7 @@ defaultDefn info x t lang def = Defn
   , defCopatternLHS   = False
   , defBlocked        = NotBlocked ReallyNotBlocked ()
   , defLanguage       = lang
-  , defUnsafePragmas  = SmallSet.empty
+  , defUnsafePragmas  = Map.empty
   , theDef            = def
   }
 
@@ -2629,8 +2636,6 @@ data UnsafePragma
   | UnsafeNonTerminating     -- ^ @NON_TERMINATING@.
   deriving (Eq, Ord, Enum, Show, Generic, Ix, Bounded)
 
-instance SmallSetElement UnsafePragma
-instance KillRange (SmallSet UnsafePragma) where killRange = id
 
 data CompKit = CompKit
   { nameOfHComp :: Maybe QName
@@ -3114,7 +3119,7 @@ instance Pretty Definition where
       , "defMatchable      =" <?> pshow (Set.toList defMatchable)
       , "defInjective      =" <?> pshow defInjective
       , "defCopatternLHS   =" <?> pshow defCopatternLHS
-      , "defUnsafePragmas  =" <?> pshow (SmallSet.toList defUnsafePragmas)
+      , "defUnsafePragmas  =" <?> pshow (Map.toList defUnsafePragmas)
       , "theDef            =" <?> pretty theDef ] <+> "}"
 
 instance Pretty Defn where
@@ -3404,6 +3409,18 @@ isWithFunction def =
   case def of
     Function { funWith = Just{} } -> True
     _ -> False
+
+-- | Was this definition produced by elaboration rather than written by the
+--   user?  With-functions -- which is also what @rewrite@ and @invert@
+--   clauses elaborate to -- pattern-matching lambdas, and the copies module
+--   instantiation makes.
+--
+--   Such definitions are real entries in the signature and are traversed like
+--   any other, but they are not names anyone can go and edit, so reporting
+--   tools count them apart from the definitions they came from.
+isGeneratedDefn :: Definition -> Bool
+isGeneratedDefn d =
+  defCopy d || isWithFunction (theDef d) || isExtendedLambda (theDef d)
 
 isCopatternLHS :: [Clause] -> Bool
 isCopatternLHS = List.any (List.any (isJust . A.isProjP) . namedClausePats)
@@ -4790,10 +4807,31 @@ data Warning
     -- ^ A postulate, shown as a proof obligation with its type.
 
   -- AST dump (--write-ast)
-  | ReachableTrustBase (List1 (QName, String))
+  | ReachableTrustBase (List1 TrustBaseItem)
     -- ^ Assumptions (postulates, unsafe definitions) reachable from the
-    --   entry point given to @--write-ast@, paired with a description of
-    --   why each one is an assumption.
+    --   entry point given to @--write-ast@.
+  deriving (Show, Generic)
+
+-- | One assumption reported by @--write-ast@.
+--
+--   An assumption is counted once per /site/ -- the place the user wrote it --
+--   not once per definition that inherits it.  A @TERMINATING@ pragma over a
+--   mutual block is one assumption however many functions the block holds and
+--   however many helpers elaboration adds to it.
+data TrustBaseItem = TrustBaseItem
+  { tbSite       :: QName
+      -- ^ The definition the assumption was written at.
+  , tbMarker     :: String
+      -- ^ Which assumption, e.g. @postulate@ or @terminating-pragma@.
+  , tbObligation :: Bool
+      -- ^ Can it be discharged by proving something?  @TERMINATING@ can:
+      --   prove the block terminates and the pragma goes away.  @INJECTIVE@
+      --   cannot: there is no Agda proof that replaces it.
+  , tbCovered    :: Int
+      -- ^ Further source-level definitions covered by the same site.
+  , tbGenerated  :: Int
+      -- ^ Machine-generated definitions covered by the same site.
+  }
   deriving (Show, Generic)
 
 recordFieldWarningToError :: RecordFieldWarning -> TypeError
@@ -6679,6 +6717,7 @@ instance NFData NLPType
 instance NFData NLPSort
 instance NFData RewriteRule
 instance NFData InstanceInfo
+instance NFData UnsafePragma
 instance NFData Definition
 instance NFData Polarity
 instance NFData IsForced
@@ -6718,6 +6757,7 @@ instance NFData AbstractMode
 instance NFData ExpandHidden
 instance NFData CandidateKind
 instance NFData Candidate
+instance NFData TrustBaseItem
 instance NFData Warning
 instance NFData RecordFieldWarning
 instance NFData TCWarning

@@ -2,10 +2,11 @@
 ———— All done; warnings encountered ————————————————————————
 
 warning: -W[no]ReachableTrustBase
-The entry point depends on the following assumptions:
-  no-positivity-check Bad
-  no-positivity-check bad
-  no-universe-check Big
-  injective-pragma inj
-  terminating-pragma loop
-  non-covering partial
+The entry point depends on 5 assumptions:
+  to discharge:
+    no-positivity-check Bad (1 more definition)
+    non-covering partial
+    terminating-pragma loop
+  taken on trust:
+    injective-pragma inj
+    no-universe-check Big

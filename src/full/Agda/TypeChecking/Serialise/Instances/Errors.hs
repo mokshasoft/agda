@@ -278,6 +278,10 @@ instance EmbPrj OptionWarning where
     [1, a]    -> valuN WarningProblem a
     _ -> malformed
 
+instance EmbPrj TrustBaseItem where
+  icod_ (TrustBaseItem a b c d e) = icodeN' TrustBaseItem a b c d e
+  value = valueN TrustBaseItem
+
 instance EmbPrj WarningModeError where
   icod_ = \case
     Unknown a   -> icodeN 0 Unknown a

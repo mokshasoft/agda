@@ -205,11 +205,36 @@ setTerminates q b = modifySignature $ updateDefinition q $ updateTheDef $ \case
     def@Record{}   -> def { recTerminates = Just b }
     def -> def
 
--- | Record that a declaration-level unsafe pragma was applied to a definition.
---   See 'UnsafePragma'.
-addUnsafePragma :: MonadTCState m => QName -> UnsafePragma -> m ()
-addUnsafePragma q p = modifySignature $ updateDefinition q $ \ def ->
-  def { defUnsafePragmas = SmallSet.insert p (defUnsafePragmas def) }
+-- | Record that a declaration-level unsafe pragma was applied to a definition,
+--   together with the site the pragma was written at.  See 'UnsafePragma'.
+--
+--   Every definition a pragma covers records the /same/ site, which is what
+--   lets a consumer count assumptions rather than affected definitions.
+addUnsafePragma :: MonadTCState m => QName -> UnsafePragma -> QName -> m ()
+addUnsafePragma q p site = modifySignature $ updateDefinition q $ \ def ->
+  def { defUnsafePragmas = Map.insert p site (defUnsafePragmas def) }
+
+-- | The canonical site for a pragma covering a group of definitions.
+--
+--   A declaration-level pragma covers a whole mutual block, which by the time
+--   it is consumed also holds the with-functions, pattern-matching lambdas and
+--   @rewrite@\/@invert@ helpers that elaboration added.  Those are not names
+--   the user wrote, so the site is the alphabetically least name that is /not/
+--   generated -- alphabetical rather than first-declared so that the choice
+--   does not move when the block is reordered or added to.
+--
+--   Falls back to the least name overall if the group is somehow all
+--   generated, so that a pragma is never silently attributed to nothing.
+pragmaSite :: (ReadTCState m, MonadTCEnv m, HasConstInfo m) => Set QName -> m (Maybe QName)
+pragmaSite names = case List.sortOn prettyShow (Set.toList names) of
+  []         -> pure Nothing
+  qs@(q : _) -> do
+    sourceLevel <- filterM (fmap not . isGeneratedDefinition) qs
+    pure $ Just $ headWithDefault q sourceLevel
+
+-- | 'isGeneratedDefn' for a name.
+isGeneratedDefinition :: HasConstInfo m => QName -> m Bool
+isGeneratedDefinition q = isGeneratedDefn <$> getConstInfo q
 
 -- | Set CompiledClauses of a defined function symbol.
 setCompiledClauses :: QName -> CompiledClauses -> TCM ()

@@ -2,6 +2,7 @@
 ———— All done; warnings encountered ————————————————————————
 
 warning: -W[no]ReachableTrustBase
-The entry point depends on the following assumptions:
-  postulate WeirdTy
-  postulate usedAxiom
+The entry point depends on 2 assumptions:
+  to discharge:
+    postulate WeirdTy
+    postulate usedAxiom

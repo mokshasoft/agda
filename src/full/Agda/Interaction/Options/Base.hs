@@ -1416,7 +1416,7 @@ standardOptions =
     , Option []     ["write-ast"] (ReqArg writeASTFlag "QNAME")
                     "write the AST reachable from QNAME, with its trust base"
     , Option []     ["ast-file"] (ReqArg astFileFlag "PATH")
-                    "where to write the --write-ast output, or - for stdout (default: agda-ast.json)"
+                    "where to write the --write-ast output, or - for stdout, which the ReachableTrustBase warning also goes to (default: agda-ast.json)"
     , Option []     ["ast-format"] (ReqArg astFormatFlag "json|text")
                     "format for the --write-ast output. The default is json."
     ] ++ map (fmap lensPragmaOptions) pragmaOptions

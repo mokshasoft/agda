@@ -176,20 +176,26 @@ termMutual names0 = ifNotM (optTerminationCheck <$> pragmaOptions) (return mempt
   -- NO_TERMINATION_CHECK
   if (Info.mutualTerminationCheck i `elem` [ NoTerminationCheck, Terminating ]) then do
       reportSLn "term.warn.yes" 10 $ "Skipping termination check for " ++ prettyShow names
-      forM_ allNames $ \ q -> do
-        setTerminates q True -- considered terminating!
-        -- Remember that this was asserted, not checked, so that consumers such
-        -- as --write-ast can report it as part of the trust base.
-        addUnsafePragma q UnsafeTerminating
+      -- One pragma covers the whole block, so every definition in it records
+      -- the same site: that is what makes the assumption countable.  The site
+      -- is taken from @names@, the names declared at top level, rather than
+      -- from @allNames@, which by now also holds the helpers elaboration added.
+      whenJustM (pragmaSite names) $ \ site ->
+        forM_ allNames $ \ q -> do
+          setTerminates q True -- considered terminating!
+          -- Remember that this was asserted, not checked, so that consumers
+          -- such as --write-ast can report it as part of the trust base.
+          addUnsafePragma q UnsafeTerminating site
       return mempty
   -- NON_TERMINATING
   else if (Info.mutualTerminationCheck i == NonTerminating) then do
       reportSLn "term.warn.yes" 10 $ "Considering as non-terminating: " ++ prettyShow names
-      forM_ allNames $ \ q -> do
-        setTerminates q False
-        -- Distinguishes the pragma from a termination check that simply
-        -- failed: 'defNonterminating' cannot tell those apart.
-        addUnsafePragma q UnsafeNonTerminating
+      whenJustM (pragmaSite names) $ \ site ->
+        forM_ allNames $ \ q -> do
+          setTerminates q False
+          -- Distinguishes the pragma from a termination check that simply
+          -- failed: 'defNonterminating' cannot tell those apart.
+          addUnsafePragma q UnsafeNonTerminating site
       return mempty
   else do
     sccs <- do

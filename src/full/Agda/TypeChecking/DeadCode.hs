@@ -9,6 +9,7 @@ module Agda.TypeChecking.DeadCode
   , moduleFileTable
   , sourceOfQName
   , qnameInProject
+  , pathInProject
   ) where
 
 import Control.Monad (filterM, when)
@@ -25,11 +26,9 @@ import Agda.Syntax.Common
 import qualified Agda.Syntax.Concrete.Name as C
 import Agda.Syntax.Internal
 import Agda.Syntax.Internal.Names
-import Agda.Syntax.Position (getRange, rangeFile, rangeFilePath)
 import Agda.Syntax.Scope.Base
 
 import Agda.Utils.FileName (filePath)
-import qualified Agda.Utils.Maybe.Strict as Strict
 
 import qualified Agda.Benchmarking as Bench
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
@@ -201,11 +200,14 @@ sourceOfQName tbl qn = listToMaybe
 
 -- | Is this name defined inside the given project directory?
 qnameInProject :: FilePath -> ModuleFileTable -> QName -> Bool
-qnameInProject projectDir tbl qn = case sourceOfQName tbl qn of
-  Nothing -> False
-  Just p  ->
-    let rel = makeRelative (normalise projectDir) p
-    in isRelative rel && not (".." `isPrefixOf` rel)
+qnameInProject projectDir tbl qn =
+  maybe False (pathInProject projectDir) $ sourceOfQName tbl qn
+
+-- | Is this file inside the given project directory?
+pathInProject :: FilePath -> FilePath -> Bool
+pathInProject projectDir p =
+  let rel = makeRelative (normalise projectDir) p
+  in isRelative rel && not (".." `isPrefixOf` rel)
 
 ---------------------------------------------------------------------------
 -- * Name lookup
