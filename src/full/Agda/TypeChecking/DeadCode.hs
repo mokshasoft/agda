@@ -10,6 +10,7 @@ module Agda.TypeChecking.DeadCode
   , sourceOfQName
   , qnameInProject
   , pathInProject
+  , allDefinitions
   ) where
 
 import Control.Monad (filterM, when)
@@ -213,6 +214,20 @@ pathInProject projectDir p =
 -- * Name lookup
 ---------------------------------------------------------------------------
 
+-- | Every definition in scope: the module being checked, and everything it
+--   imported.
+--
+--   Both halves matter.  When the main module is type checked its definitions
+--   are in the current signature, but when an up-to-date interface is reused
+--   instead they have been merged into the imported one -- so a lookup that
+--   consults only the current signature finds the entry point on a cold run
+--   and fails on a warm one.
+allDefinitions :: TCM Definitions
+allDefinitions = do
+  sig    <- getSignature
+  impSig <- useTC stImports
+  pure $ HMap.union (sig ^. sigDefinitions) (impSig ^. sigDefinitions)
+
 -- | Look up a QName by its string representation (e.g. "Module.Name.function").
 --   Returns Nothing if no such name exists in the signature.
 --
@@ -221,9 +236,8 @@ pathInProject projectDir p =
 --   2. Then checks the full module path only for remaining candidates
 lookupQNameByString :: String -> TCM (Maybe QName)
 lookupQNameByString str = do
-  sig <- getSignature
-  let defs = sig ^. sigDefinitions
-      -- Split the input "Module.Sub.name" into ["Module", "Sub", "name"]
+  defs <- allDefinitions
+  let -- Split the input "Module.Sub.name" into ["Module", "Sub", "name"]
       parts = splitOn "." str
   case parts of
     [] -> return Nothing
@@ -273,10 +287,7 @@ isProjectionUnused defs seenNames (projName, _projDef, recName) = do
 --   Only reports definitions whose source file is within the given project directory.
 checkUnreachableDefinitions :: FilePath -> QName -> TCM ()
 checkUnreachableDefinitions projectDir root = do
-  -- Get definitions from both current module and imported modules
-  sig <- getSignature
-  importedSig <- useTC stImports
-  let defs = HMap.union (sig ^. sigDefinitions) (importedSig ^. sigDefinitions)
+  defs <- allDefinitions
 
   -- Helper to check if a QName's source file is in the project directory.
   -- Uses makeRelative for robust path comparison:
@@ -348,9 +359,12 @@ checkUnreachableDefinitions projectDir root = do
       unreachableOther = filter (\(_, def) ->
         not (isRecordProjection def) && not (defCopy def)) unreachableInProject
 
-  -- Emit warnings
-  List1.unlessNull (map fst unreachableOther) $ \xs ->
+  -- Emit warnings, ordered by printed name.  Both lists come from
+  -- 'HMap.toList', i.e. in hash order, which is not meaningful and shifts
+  -- under unrelated edits -- so a report that is otherwise unchanged would
+  -- still read as changed.
+  List1.unlessNull (sortOn prettyShow $ map fst unreachableOther) $ \xs ->
     warning $ UnreachableDefinitions xs
 
-  List1.unlessNull unusedFields $ \xs ->
+  List1.unlessNull (sortOn (prettyShow . fst) unusedFields) $ \xs ->
     warning $ UnusedRecordFields xs

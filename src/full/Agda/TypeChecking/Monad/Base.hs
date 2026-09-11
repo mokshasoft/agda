@@ -3412,15 +3412,24 @@ isWithFunction def =
 
 -- | Was this definition produced by elaboration rather than written by the
 --   user?  With-functions -- which is also what @rewrite@ and @invert@
---   clauses elaborate to -- pattern-matching lambdas, and the copies module
---   instantiation makes.
+--   clauses elaborate to -- pattern-matching lambdas, the copies module
+--   instantiation makes, and the helpers a data declaration generates
+--   (constructor field projections, the Kan and transport operations).
+--
+--   'defNoCompilation' is the signal for that last group: the backends
+--   already use it to mean \"this is not the user's code\" and skip them, and
+--   nothing but 'Agda.TypeChecking.Rules.Data' ever sets it.
 --
 --   Such definitions are real entries in the signature and are traversed like
 --   any other, but they are not names anyone can go and edit, so reporting
 --   tools count them apart from the definitions they came from.
 isGeneratedDefn :: Definition -> Bool
-isGeneratedDefn d =
-  defCopy d || isWithFunction (theDef d) || isExtendedLambda (theDef d)
+isGeneratedDefn d = or
+  [ defCopy d
+  , defNoCompilation d
+  , isWithFunction (theDef d)
+  , isExtendedLambda (theDef d)
+  ]
 
 isCopatternLHS :: [Clause] -> Bool
 isCopatternLHS = List.any (List.any (isJust . A.isProjP) . namedClausePats)

@@ -565,7 +565,46 @@ typeCheckMain mode src = do
          , iTopLevelModuleName (miInterface mi)
          )
 
+  -- Run here rather than inside 'createInterface': an up-to-date interface is
+  -- reused without ever calling that, so an analysis run from there silently
+  -- produces nothing on the second invocation.  Reachability needs the
+  -- signature, not the act of type checking it, and a reused interface has
+  -- been merged into 'stImports' by then, so this works either way and does
+  -- not force a re-check.
+  when (mode == TypeCheck) $ reachabilityAnalyses src
+
   return $ CheckResult' mi src
+
+-- | Has a whole-program analysis (@--dead-code@, @--write-ast@) been asked for
+--   on this module?  They apply to the main module only.
+analysesRequested :: MainInterface -> TCM Bool
+analysesRequested = \case
+  NotMainInterface -> pure False
+  MainInterface _  -> do
+    opts <- commandLineOptions
+    pure $ not $ null $ catMaybes [ optDeadCodeRoot opts, optWriteAST opts ]
+
+-- | The whole-program analyses that run over the main module's signature:
+--   @--dead-code@ and @--write-ast@.
+reachabilityAnalyses :: Source -> TCM ()
+reachabilityAnalyses src = do
+  opts <- commandLineOptions
+  whenM (analysesRequested (MainInterface TypeCheck)) $ do
+    srcDir <- takeDirectory . filePath <$> srcFilePath (srcOrigin src)
+    projectDir <- analysisProjectDir srcDir
+
+    whenJust (optDeadCodeRoot opts) $ \ rootStr -> do
+      root <- entryPoint "--dead-code" rootStr
+      checkUnreachableDefinitions projectDir root
+
+    whenJust (optWriteAST opts) $ \ rootStr -> do
+      root <- entryPoint "--write-ast" rootStr
+      writeASTDump projectDir (optASTFile opts) (optASTFormat opts) root
+  where
+    entryPoint flag rootStr = lookupQNameByString rootStr >>= \case
+      Just root -> pure root
+      Nothing   -> genericError $
+        "Entry point for " ++ flag ++ " not found: " ++ rootStr
 
 -- Andreas, 2016-07-11, issue 2092
 -- The error range should be set to the file with the wrong module name
@@ -679,6 +718,13 @@ getInterface x isMain msrc =
       -- Andreas, 2015-07-13: Serialize iInsideScope again.
       -- Andreas, 2020-05-13 issue #4647: don't skip if reload because of top-level command
       stored <- runExceptT $ Bench.billTo [Bench.Import] $ do
+        -- A reused interface is not the same thing as a type-checked module:
+        -- it has been serialised, which kills ranges, and its scope is not in
+        -- state, so types print fully qualified.  The report would then differ
+        -- depending on whether the interface happened to be up to date, which
+        -- for output meant to be committed and diffed is worse than being slow.
+        whenM (lift $ analysesRequested isMain) $ throwError
+          "a whole-program analysis of the main module was requested"
         getStoredInterface x file msrc
 
       let recheck = \reason -> do
@@ -1308,29 +1354,6 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
     reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Starting serialization."
     i <- Bench.billTo [Bench.Serialization, Bench.BuildInterface] $
       buildInterface src topLevel
-
-    -- Check for dead code if --dead-code option is specified (only for main module)
-    case isMain of
-      MainInterface _ -> do
-        deadCodeOpts <- commandLineOptions
-        whenJust (optDeadCodeRoot deadCodeOpts) $ \rootStr -> do
-          mRoot <- lookupQNameByString rootStr
-          case mRoot of
-            Nothing -> genericError $ "Entry point for --dead-code not found: " ++ rootStr
-            Just root -> do
-              projectDir <- analysisProjectDir (takeDirectory fp)
-              checkUnreachableDefinitions projectDir root
-
-        -- Write the reachable AST if --write-ast is specified.
-        whenJust (optWriteAST deadCodeOpts) $ \rootStr -> do
-          mRoot <- lookupQNameByString rootStr
-          case mRoot of
-            Nothing -> genericError $ "Entry point for --write-ast not found: " ++ rootStr
-            Just root -> do
-              projectDir <- analysisProjectDir (takeDirectory fp)
-              writeASTDump projectDir (optASTFile deadCodeOpts)
-                           (optASTFormat deadCodeOpts) root
-      NotMainInterface -> pure ()
 
     reportS "tc.top" 101 $
       "Signature:" :

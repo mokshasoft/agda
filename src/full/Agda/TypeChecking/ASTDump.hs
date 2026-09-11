@@ -74,7 +74,8 @@ import Agda.Syntax.Position (getRange, rangeFile, rangeFilePath)
 import Agda.Interaction.Options.Base (unsafePragmaOptions)
 import Agda.Interaction.Options.Types (ASTFormat (..))
 import Agda.TypeChecking.DeadCode
-  ( ModuleFileTable, moduleFileTable, sourceOfQName, pathInProject )
+  ( ModuleFileTable, moduleFileTable, sourceOfQName, pathInProject
+  , allDefinitions )
 
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Pretty (prettyTCM)
@@ -589,10 +590,8 @@ data TrustEntry = TrustEntry
 -- | Compute the reachable set from the given root and write it out.
 writeASTDump :: FilePath -> FilePath -> ASTFormat -> QName -> TCM ()
 writeASTDump projectDir outFile format root = do
-  sig    <- getSignature
-  impSig <- useTC stImports
-  let defs  = HMap.union (sig ^. sigDefinitions) (impSig ^. sigDefinitions)
-      preds = reachableFrom defs root
+  defs <- allDefinitions
+  let preds = reachableFrom defs root
 
   modTable <- moduleFileTable
 
