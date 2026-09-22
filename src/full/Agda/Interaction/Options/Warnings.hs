@@ -644,4 +644,4 @@ warningNameDescription = \case
   -- Duplicate detection
   DuplicateDefinitions_            -> "Counts of definitions sharing a name or an elaborated type, found by --duplicate-types."
   -- Type search
-  TypeSearchHits_                  -> "Number of definitions whose type matches the pattern given to --search-type."
+  TypeSearchHits_                  -> "How many definitions are an instance of, or have a conclusion fitting, the pattern given to --search-type."

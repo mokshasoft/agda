@@ -1454,31 +1454,53 @@ standardOptions =
                     ("whether or not to colour diagnostics output. The default is auto.")
 
     , Option []     ["dead-code"] (ReqArg deadCodeFlag "QNAME")
-                    "report definitions not reachable from QNAME (e.g. Module.function)"
+                    ("report definitions not reachable from QNAME (e.g. Module.function).\n" ++
+                     "Applies to the main module, which is re-checked rather than reused.")
     , Option []     ["warn-postulates"] (NoArg warnPostulatesFlag)
                     "warn about postulates, showing their types as proof obligations"
     , Option []     ["write-ast"] (ReqArg writeASTFlag "QNAME")
-                    "write the AST reachable from QNAME, with its trust base"
+                    ("write the AST reachable from QNAME, with its trust base.\n" ++
+                     "Applies to the main module, which is re-checked rather than reused.")
     , Option []     ["ast-file"] (ReqArg astFileFlag "PATH")
-                    "where to write the --write-ast output, or - for stdout, which the ReachableTrustBase warning also goes to (default: agda-ast.json)"
+                    ("where to write the --write-ast report, or - for stdout, which the\n" ++
+                     "ReachableTrustBase warning also goes to.\n" ++
+                     "Defaults to a file (agda-ast.json), since the report is meant to be\n" ++
+                     "committed and reviewed as a diff.")
     , Option []     ["ast-format"] (ReqArg astFormatFlag "json|text")
                     "format for the --write-ast output. The default is json."
     , Option []     ["duplicate-types"] (NoArg duplicateTypesFlag)
-                    "report definitions that share a name across modules or share an elaborated type"
+                    ("report definitions sharing a name across modules, or sharing an\n" ++
+                     "elaborated type. These are candidates to read, never a fix list:\n" ++
+                     "duplication is often deliberate, and a copy can be load-bearing.\n" ++
+                     "Applies to the main module, which is re-checked rather than reused.")
     , Option []     ["dup-file"] (ReqArg dupFileFlag "PATH")
-                    "where to write the --duplicate-types output, or - for stdout (default: agda-duplicates.json)"
+                    ("where to write the --duplicate-types report, or - for stdout.\n" ++
+                     "Defaults to a file (agda-duplicates.json), since the report is\n" ++
+                     "meant to be committed and reviewed as a diff.")
     , Option []     ["dup-format"] (ReqArg dupFormatFlag "json|text")
-                    "format for the --duplicate-types output. The default is json."
+                    "format for the --duplicate-types report. The default is json."
     , Option []     ["search-type"] (ReqArg searchTypeFlag "PATTERN")
-                    "list definitions whose type matches PATTERN, with _ for any subterm"
+                    ("list definitions whose type matches PATTERN, where _ stands for any\n" ++
+                     "subterm. Two sections are reported, answering different questions:\n" ++
+                     "  generalises  -- definitions that are an INSTANCE of the pattern\n" ++
+                     "                  (is my new lemma a special case of something?)\n" ++
+                     "  instance-of  -- definitions whose CONCLUSION fits the pattern\n" ++
+                     "                  (would this lemma close a goal of this type?)\n" ++
+                     "Matching is syntactic: it does not unfold definitions.\n" ++
+                     "Applies to the main module, which is re-checked rather than reused.")
     , Option []     ["search-file"] (ReqArg searchFileFlag "PATH")
-                    "where to write the --search-type output (default: -, i.e. stdout)"
+                    ("where to write the --search-type report, or - for stdout.\n" ++
+                     "Defaults to stdout, since a search is a one-off question rather\n" ++
+                     "than an artefact to keep.")
     , Option []     ["search-format"] (ReqArg searchFormatFlag "json|text")
-                    "format for the --search-type output. The default is text."
+                    "format for the --search-type report. The default is text."
     , Option []     ["search-limit"] (ReqArg searchLimitFlag "N")
-                    "list at most N hits per direction, 0 for all (default: 40)"
+                    ("list at most N hits in EACH of the two sections, 0 for all\n" ++
+                     "(default: 40). The reported totals are never truncated.")
     , Option []     ["search-unanchored"] (NoArg searchUnanchoredFlag)
-                    "for --search-type instance-of hits, also match conclusions headed by a variable"
+                    ("in the instance-of section of --search-type, also report definitions\n" ++
+                     "whose conclusion is a bare variable. Such a definition fits every\n" ++
+                     "goal there is, so this is off by default.")
     ] ++ map (fmap lensPragmaOptions) pragmaOptions
 
 -- | Command line options of previous versions of Agda.
