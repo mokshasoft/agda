@@ -51,19 +51,12 @@ module Agda.TypeChecking.ASTDump
   ) where
 
 import Control.Monad (forM, forM_, unless)
-import Control.Monad.Except (catchError, throwError)
-import Control.Monad.IO.Class (liftIO)
 
 import Data.Foldable (foldl')
-import Data.List (partition, sortOn, stripPrefix)
+import Data.List (partition, sortOn)
 import qualified Data.HashMap.Strict as HMap
 import qualified Data.Map.Strict as MapS
 import qualified Data.Set as Set
-
-import System.FilePath (makeRelative, normalise)
-import System.IO
-  ( BufferMode (BlockBuffering), IOMode (WriteMode)
-  , hClose, hPutStr, hSetBuffering, hSetEncoding, openFile, stdout, utf8 )
 
 import Agda.Syntax.Common (NameId)
 import Agda.Syntax.Common.Pretty (prettyShow, render)
@@ -72,7 +65,11 @@ import Agda.Syntax.Internal.Names (namesIn)
 import Agda.Syntax.Position (getRange, rangeFile, rangeFilePath)
 
 import Agda.Interaction.Options.Base (unsafePragmaOptions)
-import Agda.Interaction.Options.Types (ASTFormat (..))
+import Agda.Interaction.Options.Types (ReportFormat (..))
+import Agda.TypeChecking.AnalysisOutput
+  ( J (..), Sink, defKind, encodeJ, indent, jArrField, jField, jObjField, joinArrows
+  , joinCommas, joinMembers, oneLine, pad, relativeTo, streamArray
+  , trustedRange, withComma, withOutputSink, jsonString )
 import Agda.TypeChecking.DeadCode
   ( ModuleFileTable, moduleFileTable, sourceOfQName, pathInProject
   , allDefinitions )
@@ -81,7 +78,6 @@ import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Pretty (prettyTCM)
 import Agda.TypeChecking.Warnings (warning)
 
-import Agda.Utils.FileName (filePath)
 import Agda.Utils.Lens
 import Agda.Utils.List (headWithDefault)
 import qualified Agda.Utils.List1 as List1
@@ -147,19 +143,6 @@ witnessPath preds root = walk (0 :: Int) []
 ---------------------------------------------------------------------------
 -- * Classification
 ---------------------------------------------------------------------------
-
-defKind :: Defn -> String
-defKind = \case
-  Axiom{}            -> "postulate"
-  DataOrRecSig{}     -> "data-or-record-signature"
-  GeneralizableVar{} -> "generalizable-variable"
-  AbstractDefn{}     -> "abstract"
-  Function{}         -> "function"
-  Datatype{}         -> "datatype"
-  Record{}           -> "record"
-  Constructor{}      -> "constructor"
-  Primitive{}        -> "primitive"
-  PrimitiveSort{}    -> "primitive-sort"
 
 -- | Why a definition is part of the trust base.
 --
@@ -463,35 +446,6 @@ sourcePath defs =
   where
     generated y = maybe False isGeneratedDefn $ HMap.lookup y defs
 
--- | Source range of a name, with the file made relative to the project.
---
---   A range on an imported name can point at the /importing/ file (see
---   'moduleFileTable'), so a range is reported only when it agrees with the
---   module-resolved source file.
-trustedRange :: FilePath -> Maybe FilePath -> QName -> String
-trustedRange projectDir msrc x = case rangeFile (getRange x) of
-  Strict.Nothing -> ""
-  Strict.Just rf
-    | Just (normalise printed) /= fmap normalise msrc -> ""
-    | otherwise -> maybe full (relativeTo projectDir printed ++) $
-                     stripPrefix printed full
-    where
-      printed = filePath (rangeFilePath rf)
-      full    = prettyShow (getRange x)
-
--- | Report paths relative to the project, so that a dump taken on one
---   machine is comparable with one taken on another.
-relativeTo :: FilePath -> FilePath -> FilePath
-relativeTo projectDir p
-  | pathInProject projectDir p = makeRelative (normalise projectDir) p
-  | otherwise                  = p
-
--- | Collapse a pretty-printed type onto a single line.  'prettyTCM' wraps
---   long types, which would otherwise break the line-oriented text format
---   and turn a JSON entry into an unreadable run of escaped newlines.
-oneLine :: String -> String
-oneLine = unwords . words
-
 ---------------------------------------------------------------------------
 -- * Ambient assumptions
 ---------------------------------------------------------------------------
@@ -534,34 +488,6 @@ sortedNub :: Ord a => [a] -> [a]
 sortedNub = Set.toAscList . Set.fromList
 
 ---------------------------------------------------------------------------
--- * Output
----------------------------------------------------------------------------
-
--- | Where the dump goes.  Writing through a sink rather than returning a
---   'String' is what lets the reachable listing be rendered one definition
---   at a time.
-type Sink = String -> TCM ()
-
-withOutputSink :: FilePath -> (Sink -> TCM a) -> TCM a
-withOutputSink "-" k = k $ liftIO . hPutStr stdout
-withOutputSink fp  k = do
-  h <- liftIO $ do
-    h <- openFile fp WriteMode
-    -- Agda types are full of Unicode, and the locale encoding is not to be
-    -- trusted: under @LC_ALL=C@ the default handle encoding fails on the
-    -- first arrow.
-    hSetEncoding h utf8
-    hSetBuffering h $ BlockBuffering Nothing
-    pure h
-  -- TCM is not 'MonadUnliftIO', so the handle is closed by hand on both the
-  -- normal and the exceptional path.
-  r <- k (liftIO . hPutStr h) `catchError` \ err -> do
-         liftIO $ hClose h
-         throwError err
-  liftIO $ hClose h
-  pure r
-
----------------------------------------------------------------------------
 -- * Entry point
 ---------------------------------------------------------------------------
 
@@ -588,7 +514,7 @@ data TrustEntry = TrustEntry
   }
 
 -- | Compute the reachable set from the given root and write it out.
-writeASTDump :: FilePath -> FilePath -> ASTFormat -> QName -> TCM ()
+writeASTDump :: FilePath -> FilePath -> ReportFormat -> QName -> TCM ()
 writeASTDump projectDir outFile format root = do
   defs <- allDefinitions
   let preds = reachableFrom defs root
@@ -644,8 +570,8 @@ writeASTDump projectDir outFile format root = do
   let render1 = mkEntry Brief projectDir defs preds root
 
   withOutputSink outFile $ \ put -> case format of
-    ASTFormatJSON -> renderJSON put root counts trustBase ambient render1 inProject
-    ASTFormatText -> renderText put root counts trustBase ambient render1 inProject
+    ReportJSON -> renderJSON put root counts trustBase ambient render1 inProject
+    ReportText -> renderText put root counts trustBase ambient render1 inProject
 
   unless (outFile == "-") $
     reportSLn "tc.ast.dump" 10 $
@@ -760,32 +686,9 @@ renderAmbient a = concat
   , [ "" ]
   ]
 
-pad :: Int -> String -> String
-pad n s = s ++ replicate (max 1 (n - length s)) ' '
-
-joinArrows :: [String] -> String
-joinArrows []       = ""
-joinArrows [x]      = x
-joinArrows (x : xs) = x ++ " -> " ++ joinArrows xs
-
-joinCommas :: [String] -> String
-joinCommas []       = ""
-joinCommas [x]      = x
-joinCommas (x : xs) = x ++ ", " ++ joinCommas xs
-
 ---------------------------------------------------------------------------
 -- * JSON rendering
 ---------------------------------------------------------------------------
-
--- A tiny hand-rolled JSON writer.  Using aeson here would work, but the
--- output shape is trivial and this keeps the module free of version-
--- dependent @Key@/@Value@ differences between aeson 1.x and 2.x.
---
--- The layout is one definition per line: the document is indented enough to
--- be read, but an entry is not spread over a dozen lines, so a diff between
--- two dumps has one changed line per changed definition.
-
-data J = JStr String | JNum Int | JBool Bool | JArr [J] | JObj [(String, J)] | JNull
 
 renderJSON
   :: Sink -> QName -> Counts -> [TrustEntry] -> Ambient
@@ -841,17 +744,6 @@ trustJ (TrustEntry a e) = JObj $ concat
   , [ ("path", JArr (map JStr (ePath e))) | not (null (ePath e)) ]
   ]
 
--- | Write a JSON array element by element, rendering each only when it is
---   about to be written.  Returns the number of elements emitted.
-streamArray :: Sink -> Int -> (a -> TCM J) -> [a] -> TCM Int
-streamArray put n render = go (0 :: Int)
-  where
-    go !i [] = pure i
-    go !i (x : xs) = do
-      j <- render x
-      put $ (if i == 0 then "\n" else ",\n") ++ indent n ++ encodeJ j
-      go (i + 1) xs
-
 entryJ :: Entry -> J
 entryJ e = JObj $ concat
   [ [ ("name",   JStr (clName (eClass e)))
@@ -887,69 +779,3 @@ ambientBlock n a = concat
       ]
   , [ indent n ++ "}" ]
   ]
-
-indent :: Int -> String
-indent n = replicate (2 * n) ' '
-
--- | @"key": value@ on one line.
-jField :: Int -> String -> J -> [String]
-jField n k v = [ indent n ++ jsonString k ++ ": " ++ encodeJ v ]
-
--- | @"key": { ... }@, one member per line.
-jObjField :: Int -> String -> [(String, J)] -> [String]
-jObjField n k kvs = concat
-  [ [ indent n ++ jsonString k ++ ": {" ]
-  , joinMembers [ jField (n + 1) k' v | (k', v) <- kvs ]
-  , [ indent n ++ "}" ]
-  ]
-
--- | @"key": [ ... ]@, one element per line.
-jArrField :: Int -> String -> [J] -> [String]
-jArrField n k [] = [ indent n ++ jsonString k ++ ": []" ]
-jArrField n k js = concat
-  [ [ indent n ++ jsonString k ++ ": [" ]
-  , joinMembers [ [ indent (n + 1) ++ encodeJ j ] | j <- js ]
-  , [ indent n ++ "]" ]
-  ]
-
--- | Separate rendered members by commas, which go on the last line of each
---   member but the last.
-joinMembers :: [[String]] -> [String]
-joinMembers []       = []
-joinMembers [b]      = b
-joinMembers (b : bs) = withComma b ++ joinMembers bs
-
-withComma :: [String] -> [String]
-withComma [] = []
-withComma ls = init ls ++ [ last ls ++ "," ]
-
-encodeJ :: J -> String
-encodeJ = \case
-  JNull    -> "null"
-  JBool b  -> if b then "true" else "false"
-  JNum n   -> show n
-  JStr s   -> jsonString s
-  JArr xs  -> "[" ++ joinCommas (map encodeJ xs) ++ "]"
-  JObj kvs -> "{" ++ joinCommas [ jsonString k ++ ": " ++ encodeJ v
-                                | (k, v) <- kvs ] ++ "}"
-
-jsonString :: String -> String
-jsonString s = '"' : concatMap esc s ++ "\""
-  where
-    esc = \case
-      '"'  -> "\\\""
-      '\\' -> "\\\\"
-      '\n' -> "\\n"
-      '\r' -> "\\r"
-      '\t' -> "\\t"
-      c | c < ' '   -> "\\u" ++ pad4 (showHex (fromEnum c))
-        | otherwise -> [c]
-    pad4 h = replicate (4 - length h) '0' ++ h
-    showHex 0 = "0"
-    showHex n = go n ""
-      where
-        go 0 acc = acc
-        go m acc = go (m `div` 16) (hexDigit (m `mod` 16) : acc)
-        hexDigit d
-          | d < 10    = toEnum (fromEnum '0' + d)
-          | otherwise = toEnum (fromEnum 'a' + d - 10)

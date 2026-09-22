@@ -698,7 +698,7 @@ defaultOptions = Options
   , optWarnPostulates        = False
   , optWriteAST              = Nothing
   , optASTFile               = "agda-ast.json"
-  , optASTFormat             = ASTFormatJSON
+  , optASTFormat             = ReportJSON
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1203,11 +1203,16 @@ astFileFlag :: FilePath -> Flag CommandLineOptions
 astFileFlag s o = return $ o { optASTFile = s }
 
 astFormatFlag :: String -> Flag CommandLineOptions
-astFormatFlag s o = case s of
-  "json" -> return $ o { optASTFormat = ASTFormatJSON }
-  "text" -> return $ o { optASTFormat = ASTFormatText }
-  _      -> throwError $
-    "unknown argument to --ast-format: " ++ s ++ " (expected 'json' or 'text')"
+astFormatFlag s o = do
+  fmt <- reportFormat "--ast-format" s
+  return $ o { optASTFormat = fmt }
+
+reportFormat :: MonadError String m => String -> String -> m ReportFormat
+reportFormat flag = \case
+  "json" -> return ReportJSON
+  "text" -> return ReportText
+  s      -> throwError $
+    "unknown argument to " ++ flag ++ ": " ++ s ++ " (expected 'json' or 'text')"
 
 withKFlag :: Flag PragmaOptions
 withKFlag =

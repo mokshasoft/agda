@@ -101,7 +101,7 @@ data CommandLineOptions = Options
       -- ^ Entry point for the AST dump (@--write-ast=QNAME@).
   , optASTFile               :: FilePath
       -- ^ Where to write the AST dump (@--ast-file=PATH@).
-  , optASTFormat             :: ASTFormat
+  , optASTFormat             :: ReportFormat
       -- ^ Output format for the AST dump (@--ast-format=json|text@).
   }
   deriving (Show, Generic)
@@ -253,10 +253,11 @@ data DiagnosticsColours
   | AutoColour
   deriving (Show, Generic)
 
--- | Output format for @--write-ast@.
-data ASTFormat
-  = ASTFormatJSON
-  | ASTFormatText
+-- | Output format for the whole-program analysis reports
+--   (@--write-ast@, @--duplicate-types@).
+data ReportFormat
+  = ReportJSON
+  | ReportText
   deriving (Show, Eq, Generic)
 
 -- | If several @--emacs-mode@ commands are given,
@@ -319,7 +320,7 @@ instance NFData PragmaOptions
 
 instance NFData ConfluenceCheck
 instance NFData DiagnosticsColours
-instance NFData ASTFormat
+instance NFData ReportFormat
 instance NFData EmacsModeCommand
 instance NFData InfectiveCoinfective
 instance NFData PrintAgdaVersion

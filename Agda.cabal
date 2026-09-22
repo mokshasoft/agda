@@ -742,6 +742,7 @@ library
       Agda.TypeChecking.Coverage.Cubical
       Agda.TypeChecking.Datatypes
       Agda.TypeChecking.ASTDump
+      Agda.TypeChecking.AnalysisOutput
       Agda.TypeChecking.DeadCode
       Agda.TypeChecking.DisplayForm
       Agda.TypeChecking.DropArgs
