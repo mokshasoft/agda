@@ -763,6 +763,18 @@ prettyWarning = \case
           show d ++ " " ++ suffix d "definition"
         suffix n what = what ++ (if n == 1 then "" else "s")
 
+    TypeSearchHits r -> vcat $ concat
+      -- Not 'show' on the pattern: it is Agda source, so it is full of
+      -- non-ASCII, and 'show' would escape ≡ to \8801.
+      [ [ text $ show (tsHits r) ++ " definition"
+            ++ (if tsHits r == 1 then "" else "s")
+            ++ " match \"" ++ tsPattern r ++ "\"" ]
+      , [ text $ "Listing the top " ++ show (tsShown r)
+            ++ "; raise --search-limit for more"
+        | tsShown r < tsHits r ]
+      , [ "Full report:" <+> text (tsFile r) | tsFile r /= "-" ]
+      ]
+
 instance PrettyTCM DataOrRecord_ where
   prettyTCM = \case
     IsData{}   -> "data"

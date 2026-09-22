@@ -87,6 +87,7 @@ import Agda.TypeChecking.Pretty as P
 import Agda.TypeChecking.ASTDump (writeASTDump)
 import Agda.TypeChecking.DeadCode
 import Agda.TypeChecking.DuplicateTypes (findDuplicates)
+import Agda.TypeChecking.TypeSearch (searchType)
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
 import Agda.TheTypeChecker
@@ -588,6 +589,7 @@ analysesRequested = \case
       [ isJust (optDeadCodeRoot opts)
       , isJust (optWriteAST opts)
       , optDuplicateTypes opts
+      , isJust (optSearchType opts)
       ]
 
 -- | The whole-program analyses that run over the main module's signature:
@@ -611,6 +613,12 @@ signatureAnalyses src = do
     -- whole signature, not a traversal from a root.
     when (optDuplicateTypes opts) $
       findDuplicates projectDir (optDupFile opts) (optDupFormat opts)
+
+    -- The pattern is read in the main module's scope, which is why this needs
+    -- the module name and the others do not.
+    whenJust (optSearchType opts) $ \ pat ->
+      searchType projectDir (srcModuleName src) pat
+        (optSearchFile opts) (optSearchFormat opts) (optSearchLimit opts)
   where
     entryPoint flag rootStr = lookupQNameByString rootStr >>= \case
       Just root -> pure root

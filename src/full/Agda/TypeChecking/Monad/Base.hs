@@ -4823,6 +4823,10 @@ data Warning
   -- Duplicate detection (--duplicate-types)
   | DuplicateDefinitions DuplicateReport
     -- ^ How many definitions share a name or an elaborated type.
+
+  -- Type search (--search-type)
+  | TypeSearchHits TypeSearchReport
+    -- ^ How many definitions have a type matching the search pattern.
   deriving (Show, Generic)
 
 -- | One assumption reported by @--write-ast@.
@@ -4864,6 +4868,23 @@ data DuplicateReport = DuplicateReport
       -- ^ Definitions in those groups.
   , drFile        :: FilePath
       -- ^ Where the full report was written; @-@ for standard output.
+  }
+  deriving (Show, Generic)
+
+-- | Summary of what @--search-type@ found.
+--
+--   Counts only, for the same reason as 'DuplicateReport': a common pattern
+--   matches thousands of types, and the ranked listing belongs in the report
+--   rather than in the compiler output.
+data TypeSearchReport = TypeSearchReport
+  { tsPattern :: String
+      -- ^ The pattern as the user wrote it.
+  , tsHits    :: Int
+      -- ^ Definitions whose type matches it.
+  , tsShown   :: Int
+      -- ^ How many of them the report lists; see @--search-limit@.
+  , tsFile    :: FilePath
+      -- ^ Where the report was written; @-@ for standard output.
   }
   deriving (Show, Generic)
 
@@ -5004,6 +5025,9 @@ warningName = \case
 
   -- Duplicate detection
   DuplicateDefinitions{} -> DuplicateDefinitions_
+
+  -- Type search
+  TypeSearchHits{} -> TypeSearchHits_
 
 illegalRewriteWarningName :: IllegalRewriteRuleReason -> WarningName
 illegalRewriteWarningName = \case
@@ -6795,6 +6819,7 @@ instance NFData CandidateKind
 instance NFData Candidate
 instance NFData TrustBaseItem
 instance NFData DuplicateReport
+instance NFData TypeSearchReport
 instance NFData Warning
 instance NFData RecordFieldWarning
 instance NFData TCWarning

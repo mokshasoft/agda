@@ -702,6 +702,10 @@ defaultOptions = Options
   , optDuplicateTypes        = False
   , optDupFile               = "agda-duplicates.json"
   , optDupFormat             = ReportJSON
+  , optSearchType            = Nothing
+  , optSearchFile            = "-"
+  , optSearchFormat          = ReportText
+  , optSearchLimit           = 40
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1221,6 +1225,23 @@ dupFormatFlag s o = do
   fmt <- reportFormat "--dup-format" s
   return $ o { optDupFormat = fmt }
 
+searchTypeFlag :: String -> Flag CommandLineOptions
+searchTypeFlag s o = return $ o { optSearchType = Just s }
+
+searchFileFlag :: FilePath -> Flag CommandLineOptions
+searchFileFlag s o = return $ o { optSearchFile = s }
+
+searchFormatFlag :: String -> Flag CommandLineOptions
+searchFormatFlag s o = do
+  fmt <- reportFormat "--search-format" s
+  return $ o { optSearchFormat = fmt }
+
+searchLimitFlag :: String -> Flag CommandLineOptions
+searchLimitFlag s o = case reads s of
+  [(n, "")] | n >= 0 -> return $ o { optSearchLimit = n }
+  _ -> throwError $
+    "--search-limit expects a non-negative number, got: " ++ s
+
 reportFormat :: MonadError String m => String -> String -> m ReportFormat
 reportFormat flag = \case
   "json" -> return ReportJSON
@@ -1444,6 +1465,14 @@ standardOptions =
                     "where to write the --duplicate-types output, or - for stdout (default: agda-duplicates.json)"
     , Option []     ["dup-format"] (ReqArg dupFormatFlag "json|text")
                     "format for the --duplicate-types output. The default is json."
+    , Option []     ["search-type"] (ReqArg searchTypeFlag "PATTERN")
+                    "list definitions whose type matches PATTERN, with _ for any subterm"
+    , Option []     ["search-file"] (ReqArg searchFileFlag "PATH")
+                    "where to write the --search-type output (default: -, i.e. stdout)"
+    , Option []     ["search-format"] (ReqArg searchFormatFlag "json|text")
+                    "format for the --search-type output. The default is text."
+    , Option []     ["search-limit"] (ReqArg searchLimitFlag "N")
+                    "list at most N hits, 0 for all (default: 40)"
     ] ++ map (fmap lensPragmaOptions) pragmaOptions
 
 -- | Command line options of previous versions of Agda.

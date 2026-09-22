@@ -145,6 +145,7 @@ instance EmbPrj Warning where
     PostulateProofObligation a b                -> icodeN 77 PostulateProofObligation a b
     ReachableTrustBase a                        -> icodeN 78 ReachableTrustBase a
     DuplicateDefinitions a                      -> icodeN 79 DuplicateDefinitions a
+    TypeSearchHits a                            -> icodeN 80 TypeSearchHits a
 
   value = vcase $ \ case
     [0, a, b]            -> valuN UnreachableClauses a b
@@ -228,6 +229,7 @@ instance EmbPrj Warning where
     [77, a, b]           -> valuN PostulateProofObligation a b
     [78, a]              -> valuN ReachableTrustBase a
     [79, a]              -> valuN DuplicateDefinitions a
+    [80, a]              -> valuN TypeSearchHits a
     _ -> malformed
 
 instance EmbPrj UselessPublicReason
@@ -287,6 +289,10 @@ instance EmbPrj TrustBaseItem where
 instance EmbPrj DuplicateReport where
   icod_ (DuplicateReport a b c d e) = icodeN' DuplicateReport a b c d e
   value = valueN DuplicateReport
+
+instance EmbPrj TypeSearchReport where
+  icod_ (TypeSearchReport a b c d) = icodeN' TypeSearchReport a b c d
+  value = valueN TypeSearchReport
 
 instance EmbPrj WarningModeError where
   icod_ = \case

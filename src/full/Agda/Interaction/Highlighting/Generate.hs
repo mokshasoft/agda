@@ -609,6 +609,9 @@ warningHighlighting' b w = case tcWarning w of
   -- Duplicate detection (--duplicate-types)
   DuplicateDefinitions{} -> mempty  -- counts only; the definitions are in many files
 
+  -- Type search (--search-type)
+  TypeSearchHits{} -> mempty  -- counts only; the hits are in many files
+
 recordFieldWarningHighlighting ::
   RecordFieldWarning -> HighlightingInfoBuilder
 recordFieldWarningHighlighting = \case

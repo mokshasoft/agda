@@ -110,6 +110,14 @@ data CommandLineOptions = Options
       -- ^ Where to write the duplicate report (@--dup-file=PATH@).
   , optDupFormat             :: ReportFormat
       -- ^ Output format for the duplicate report (@--dup-format=json|text@).
+  , optSearchType            :: Maybe String
+      -- ^ Type pattern to search the signature for (@--search-type=PATTERN@).
+  , optSearchFile            :: FilePath
+      -- ^ Where to write the search report (@--search-file=PATH@).
+  , optSearchFormat          :: ReportFormat
+      -- ^ Output format for the search report (@--search-format=json|text@).
+  , optSearchLimit           :: Int
+      -- ^ How many hits to list (@--search-limit=N@); @0@ for all.
   }
   deriving (Show, Generic)
 

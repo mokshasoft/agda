@@ -745,6 +745,8 @@ library
       Agda.TypeChecking.AnalysisOutput
       Agda.TypeChecking.DeadCode
       Agda.TypeChecking.DuplicateTypes
+      Agda.TypeChecking.TypeKey
+      Agda.TypeChecking.TypeSearch
       Agda.TypeChecking.DisplayForm
       Agda.TypeChecking.DropArgs
       Agda.TypeChecking.DiscrimTree

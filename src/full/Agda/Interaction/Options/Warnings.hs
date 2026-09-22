@@ -393,6 +393,8 @@ data WarningName
   | ReachableTrustBase_
   -- Duplicate detection (--duplicate-types)
   | DuplicateDefinitions_
+  -- Type search (--search-type)
+  | TypeSearchHits_
   deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 instance NFData WarningName
@@ -641,3 +643,5 @@ warningNameDescription = \case
   ReachableTrustBase_              -> "Assumptions reachable from the entry point specified via --write-ast."
   -- Duplicate detection
   DuplicateDefinitions_            -> "Counts of definitions sharing a name or an elaborated type, found by --duplicate-types."
+  -- Type search
+  TypeSearchHits_                  -> "Number of definitions whose type matches the pattern given to --search-type."
