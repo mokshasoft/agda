@@ -22,6 +22,19 @@ run_fail() {
           $(cat $dir/$t.flags) $dir/$t.agda 2>&1 | sed -n '/error:/,$p')
   compare "$dir/$t.err" "$got" "$t"
 }
+# Bad option values are rejected during option parsing, before any type
+# checking, so they print `Error: ...` rather than an `error: [Code]` block
+# and run_fail's extraction finds nothing.  They get their own category,
+# comparing the whole output, with goldens in test/Fail/<name>.opterr.
+run_optfail() {
+  local t=$1 flags=$2 dir=test/Fail
+  rm -rf $dir/_build 2>/dev/null
+  local got
+  got=$($AGDA -v0 -i$dir -itest/ --no-libraries $flags \
+          $dir/OptionErrorDummy.agda 2>&1)
+  compare "$dir/$t.opterr" "$got" "$t"
+}
+
 compare() {
   local golden=$1 got=$2 t=$3
   if [ "$MODE" = accept ]; then printf '%s\n' "$got" > "$golden"; echo "ACCEPT $t"; return; fi
@@ -37,10 +50,14 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          DuplicateTypesBasic DuplicateTypesModules DuplicateTypesFields \
          DuplicateTypesJSON DuplicateTypesClean SearchTypeBasic \
          SearchTypeInstance SearchTypePrefix SearchTypeRanking \
-         SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff; do
+         SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff \
+         SearchTypeHigherOrder SearchTypeLimit; do
   run_succeed $t
 done
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done
+run_optfail DupFormatBadValue    "--duplicate-types --dup-format=bogus"
+run_optfail SearchFormatBadValue "--search-type=Tm --search-format=xml"
+run_optfail SearchLimitBadValue  "--search-type=Tm --search-limit=-3"
 rm -rf test/Succeed/_build test/Succeed/*/_build test/Fail/_build 2>/dev/null
 echo "======== $pass passed, $fail failed ========"
 [ $fail -eq 0 ]

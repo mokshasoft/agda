@@ -1,0 +1,38 @@
+Type search
+
+Pattern:    P(_)
+Elaborated: P _12
+
+  Pattern symbols, and how many types in scope mention each --
+  a pattern built only from common ones cannot return a short list:
+
+    SearchTypeLimit.P           5 types
+
+== AN INSTANCE OF THE PATTERN (generalises) ==
+
+  5 hits (2 listed)
+
+  Is my new lemma a special case of something?  Ranked by how much of
+  each hit the pattern accounts for.
+
+  SearchTypeLimit.pa  [67%, whole type, body 0]
+    : P a
+    with _1 := a
+    test/Succeed/SearchTypeLimit.agda:11.3-5
+
+  SearchTypeLimit.pb  [67%, whole type, body 0]
+    : P b
+    with _1 := b
+    test/Succeed/SearchTypeLimit.agda:12.3-5
+
+== CONCLUSION FITS THE PATTERN (instance-of) ==
+
+  0 hits
+
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]TypeSearchHits
+Pattern "P(_)"
+  5 definitions (top 2 listed) an instance of it (generalises)
+  0 definitions a conclusion fitting it (instance-of)

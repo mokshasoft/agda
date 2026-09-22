@@ -1,0 +1,2 @@
+Error: --search-limit expects a non-negative number, got: -3
+Run 'agda --help' for help on command line options.

@@ -1,0 +1,2 @@
+Error: unknown argument to --dup-format: bogus (expected 'json' or 'text')
+Run 'agda --help' for help on command line options.

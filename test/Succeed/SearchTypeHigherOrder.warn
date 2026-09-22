@@ -1,0 +1,41 @@
+Type search
+
+Pattern:    Q(t0)
+Elaborated: Q t0
+
+  Pattern symbols, and how many types in scope mention each --
+  a pattern built only from common ones cannot return a short list:
+
+    SearchTypeHigherOrder.t0    0 types
+    SearchTypeHigherOrder.Q     1 types
+
+== AN INSTANCE OF THE PATTERN (generalises) ==
+
+  0 hits
+
+== CONCLUSION FITS THE PATTERN (instance-of) ==
+
+  2 hits
+
+  Would this lemma close my goal?  Ranked by how little is left to do.
+  `needs` is what the match did not determine -- matching a conclusion
+  says the lemma applies, not that it closes anything.
+
+  SearchTypeHigherOrder.fits  [body 0]
+    : (x : Tm) → Q x
+    with x := t0
+    test/Succeed/SearchTypeHigherOrder.agda:25.3-7
+
+  Agda.Primitive.Cubical.primHComp  (external)  [body 0]
+    : {ℓ : Agda.Primitive.Level} {A : Set ℓ} {φ : Agda.Primitive.Cubical.I} → (Agda.Primitive.Cubical.I → Agda.Primitive.Cubical.Partial φ A) → A → A
+    with A := Q t0
+    needs {ℓ : Agda.Primitive.Level}, {φ : Agda.Primitive.Cubical.I}, (u : Agda.Primitive.Cubical.I → Agda.Primitive.Cubical.Partial φ A), (a : A)
+    /home/whatever/.cabal/share/x86_64-linux-ghc-9.6.5/Agda-2.8.0/lib/prim/Agda/Primitive/Cubical.agda
+
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]TypeSearchHits
+Pattern "Q(t0)"
+  0 definitions an instance of it (generalises)
+  2 definitions a conclusion fitting it (instance-of)
