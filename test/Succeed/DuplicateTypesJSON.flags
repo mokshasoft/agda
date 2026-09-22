@@ -1,0 +1,1 @@
+--duplicate-types --dup-file=- --dup-format=json

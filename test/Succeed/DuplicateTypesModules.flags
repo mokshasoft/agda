@@ -1,1 +1,1 @@
---duplicate-types --dup-file=/dev/null
+--duplicate-types --dup-file=- --dup-format=text

@@ -1,0 +1,35 @@
+Type search
+
+Pattern:    P(t0)
+Elaborated: P t0
+
+  Pattern symbols, and how many types in scope mention each --
+  a pattern built only from common ones cannot return a short list:
+
+    SearchTypeUnanchoredOff.t0  0 types
+    SearchTypeUnanchoredOff.P   1 types
+
+== AN INSTANCE OF THE PATTERN (generalises) ==
+
+  0 hits
+
+== CONCLUSION FITS THE PATTERN (instance-of) ==
+
+  1 hit
+
+  Would this lemma close my goal?  Ranked by how little is left to do.
+  `needs` is what the match did not determine -- matching a conclusion
+  says the lemma applies, not that it closes anything.
+
+  SearchTypeUnanchoredOff.fits  [body 0]
+    : (x : Tm) → P x
+    with x := t0
+    test/Succeed/SearchTypeUnanchoredOff.agda:10.3-7
+
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]TypeSearchHits
+Pattern "P(t0)"
+  0 definitions an instance of it (generalises)
+  1 definition a conclusion fitting it (instance-of)

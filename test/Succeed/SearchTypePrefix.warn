@@ -1,12 +1,12 @@
 Type search
 
-Pattern:    Wrap(Wrap(_))
-Elaborated: Wrap (Wrap _A_15)
+Pattern:    (Tm)→(Tm)
+Elaborated: Tm → Tm
 
   Pattern symbols, and how many types in scope mention each --
   a pattern built only from common ones cannot return a short list:
 
-    SearchTypeBasic.Wrap        4 types
+    SearchTypePrefix.Tm         3 types
 
 == AN INSTANCE OF THE PATTERN (generalises) ==
 
@@ -15,34 +15,35 @@ Elaborated: Wrap (Wrap _A_15)
   Is my new lemma a special case of something?  Ranked by how much of
   each hit the pattern accounts for.
 
-  SearchTypeBasic.alsoNested  [80%, whole type, body 3]
-    : Wrap (Wrap Bool)
-    with _1 := Bool
-    test/Succeed/SearchTypeBasic.agda:23.1-11
+  SearchTypePrefix.twice  [100%, whole type, body 0]
+    : Tm → Tm
+    test/Succeed/SearchTypePrefix.agda:14.3-8
 
-  SearchTypeBasic.nested  [80%, whole type, body 3]
-    : Wrap (Wrap Nat)
-    with _1 := Nat
-    test/Succeed/SearchTypeBasic.agda:20.1-7
+  SearchTypePrefix.const  [60%, body 0]
+    : Tm → Tm → Tm
+    test/Succeed/SearchTypePrefix.agda:15.3-8
 
 == CONCLUSION FITS THE PATTERN (instance-of) ==
 
-  1 hit
+  2 hits
 
   Would this lemma close my goal?  Ranked by how little is left to do.
   `needs` is what the match did not determine -- matching a conclusion
   says the lemma applies, not that it closes anything.
 
-  SearchTypeBasic.Wrap.wrap  [body 0]
-    : {A : Set} → A → Wrap A
-    with A := Wrap _A_15
-    needs (_ : A)
-    test/Succeed/SearchTypeBasic.agda:18.3-7
+  SearchTypePrefix.twice  [body 0]
+    : Tm → Tm
+    test/Succeed/SearchTypePrefix.agda:14.3-8
+
+  SearchTypePrefix.const  [body 0]
+    : Tm → Tm → Tm
+    needs (_ : Tm)
+    test/Succeed/SearchTypePrefix.agda:15.3-8
 
 
 ———— All done; warnings encountered ————————————————————————
 
 warning: -W[no]TypeSearchHits
-Pattern "Wrap(Wrap(_))"
+Pattern "(Tm)→(Tm)"
   2 definitions an instance of it (generalises)
-  1 definition a conclusion fitting it (instance-of)
+  2 definitions a conclusion fitting it (instance-of)

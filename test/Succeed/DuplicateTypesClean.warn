@@ -1,7 +1,7 @@
 Duplicate definition report
 
-Definitions considered: 6 in project, of which 3 are keyed by type
-Sharing an elaborated type: 1 group, 2 definitions
+Definitions considered: 6 in project, of which 1 are keyed by type
+Sharing an elaborated type: 0 groups, 0 definitions
 Defined in more than one module: 0 groups, 0 definitions
 
   Duplication is frequently deliberate.  Parallel families must both
@@ -18,18 +18,8 @@ Defined in more than one module: 0 groups, 0 definitions
 
 == SHARING AN ELABORATED TYPE ==
 
-  Nat → Nat
-    DuplicateTypesBasic.plusOne  function      body 2    test/Succeed/DuplicateTypesBasic.agda:13.1-8
-    DuplicateTypesBasic.succOf   function      body 5    test/Succeed/DuplicateTypesBasic.agda:16.1-7
+  (none -- no two definitions in the project share a type)
 
 == DEFINED IN MORE THAN ONE MODULE ==
 
   (none -- every base name in the project is defined once)
-
-
-———— All done; warnings encountered ————————————————————————
-
-warning: -W[no]DuplicateDefinitions
-Sharing an elaborated type: 1 group, 2 definitions
-Defined in more than one module: 0 groups, 0 definitions
-Duplication is often deliberate: candidates to read, not to delete.

@@ -1,0 +1,45 @@
+Type search
+
+Pattern:    step(_)(step(_)(_))≡(_)
+Elaborated: step _43 (step _44 _45) ≡ _46
+
+  Pattern symbols, and how many types in scope mention each --
+  a pattern built only from common ones cannot return a short list:
+
+    SearchTypeRanking.step      3 types
+    SearchTypeRanking._≡_       4 types
+    SearchTypeRanking.Tm        5 types
+
+== AN INSTANCE OF THE PATTERN (generalises) ==
+
+  3 hits
+
+  Is my new lemma a special case of something?  Ranked by how much of
+  each hit the pattern accounts for.
+
+  SearchTypeRanking.tight  [44%, body 0]
+    : (a b c : Tm) → step a (step b c) ≡ step a c
+    with _1 := a, _2 := b, _3 := c, _4 := step a c
+    test/Succeed/SearchTypeRanking.agda:29.3-8
+
+  SearchTypeRanking.middle  [33%, body 0]
+    : (a b c : Tm) → a ≡ a → step a (step b c) ≡ step a c
+    with _1 := a, _2 := b, _3 := c, _4 := step a c
+    test/Succeed/SearchTypeRanking.agda:30.3-9
+
+  SearchTypeRanking.buried  [22%, body 0]
+    : (a b c : Tm) → a ≡ a → b ≡ b → c ≡ c → step a (step b c) ≡ step a c
+    with _1 := a, _2 := b, _3 := c, _4 := step a c
+    test/Succeed/SearchTypeRanking.agda:31.3-9
+
+== CONCLUSION FITS THE PATTERN (instance-of) ==
+
+  0 hits
+
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]TypeSearchHits
+Pattern "step(_)(step(_)(_))≡(_)"
+  3 definitions an instance of it (generalises)
+  0 definitions a conclusion fitting it (instance-of)

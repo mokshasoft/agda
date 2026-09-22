@@ -1,0 +1,4 @@
+1.1-11: error: [NotInScope]
+Not in scope:
+  noSuchName at 1.1-11
+when scope checking noSuchName

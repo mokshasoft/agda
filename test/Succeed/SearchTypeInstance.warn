@@ -1,0 +1,53 @@
+Type search
+
+Pattern:    P(t0)
+Elaborated: P t0
+
+  Pattern symbols, and how many types in scope mention each --
+  a pattern built only from common ones cannot return a short list:
+
+    SearchTypeInstance.t0       1 types
+    SearchTypeInstance.P        3 types
+
+== AN INSTANCE OF THE PATTERN (generalises) ==
+
+  1 hit
+
+  Is my new lemma a special case of something?  Ranked by how much of
+  each hit the pattern accounts for.
+
+  SearchTypeInstance.direct  [100%, whole type, body 0]
+    : P t0
+    test/Succeed/SearchTypeInstance.agda:19.3-9
+
+== CONCLUSION FITS THE PATTERN (instance-of) ==
+
+  3 hits
+
+  Would this lemma close my goal?  Ranked by how little is left to do.
+  `needs` is what the match did not determine -- matching a conclusion
+  says the lemma applies, not that it closes anything.
+
+  SearchTypeInstance.direct  [body 0]
+    : P t0
+    test/Succeed/SearchTypeInstance.agda:19.3-9
+
+  SearchTypeInstance.withImplicit  [body 0]
+    : {y : Tm} (x : Tm) → P x
+    with x := t0
+    needs {y : Tm}
+    test/Succeed/SearchTypeInstance.agda:20.3-15
+
+  SearchTypeInstance.viaPremises  [body 0]
+    : (x : Tm) → Q x → x ~ t1 → P x
+    with x := t0
+    needs (_ : Q x), (_ : x ~ t1)
+    test/Succeed/SearchTypeInstance.agda:21.3-14
+
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]TypeSearchHits
+Pattern "P(t0)"
+  1 definition an instance of it (generalises)
+  3 definitions a conclusion fitting it (instance-of)

@@ -1,8 +1,38 @@
+Duplicate definition report
+
+Definitions considered: 6 in project, of which 3 are keyed by type
+Sharing an elaborated type: 1 group, 3 definitions
+Defined in more than one module: 1 group, 2 definitions
+
+  Duplication is frequently deliberate.  Parallel families must both
+  exist; a copy that lets one part of a development avoid importing
+  another may be carrying an architectural invariant, and deleting it
+  would be a regression; and a specialised route can be cheaper than
+  the general lemma it is an instance of.  Nothing in a type
+  distinguishes those from a real duplicate.
+
+  The body size is the elaborated size of each definition's proof term.
+  Two definitions with the same type are still different propositions
+  if one elaborates to ten times the term, and that -- not anything in
+  the statement -- is what decides whether collapsing them is a win.
+
+== SHARING AN ELABORATED TYPE ==
+
+  Nat → Nat
+    DuplicateTypesModules.Helper.twin   function      body 2    test/Succeed/DuplicateTypesModules/Helper.agda
+    DuplicateTypesModules.alsoNatToNat  function      body 1    test/Succeed/DuplicateTypesModules.agda:18.1-13
+    DuplicateTypesModules.twin          function      body 2    test/Succeed/DuplicateTypesModules.agda:15.1-5
+
+== DEFINED IN MORE THAN ONE MODULE ==
+
+  twin  (DuplicateTypesModules, DuplicateTypesModules.Helper)
+    DuplicateTypesModules.Helper.twin  function      body 2    test/Succeed/DuplicateTypesModules/Helper.agda
+    DuplicateTypesModules.twin         function      body 2    test/Succeed/DuplicateTypesModules.agda:15.1-5
+
 
 ———— All done; warnings encountered ————————————————————————
 
 warning: -W[no]DuplicateDefinitions
 Sharing an elaborated type: 1 group, 3 definitions
 Defined in more than one module: 1 group, 2 definitions
-Full report: /dev/null
 Duplication is often deliberate: candidates to read, not to delete.

@@ -1,1 +1,1 @@
---search-type=Wrap(Wrap(_)) --search-file=/dev/null
+--search-type=Wrap(Wrap(_)) --search-file=- --search-format=text

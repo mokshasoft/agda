@@ -1,0 +1,28 @@
+{
+  "pattern": "P(t0)",
+  "elaborated": "P t0",
+  "counts": {
+    "generalises": 1,
+    "generalisesListed": 1,
+    "instanceOf": 2,
+    "instanceOfListed": 2
+  },
+  "patternSymbols": [
+    {"symbol": "SearchTypeJSON.t0", "types": 1},
+    {"symbol": "SearchTypeJSON.P", "types": 2}
+  ],
+  "generalises": [
+    {"name": "SearchTypeJSON.direct", "kind": "postulate", "type": "P t0", "bodySize": 0, "source": "test/Succeed/SearchTypeJSON.agda", "coverage": 100, "range": "test/Succeed/SearchTypeJSON.agda:10.3-9", "wholeType": true}
+  ],
+  "instanceOf": [
+    {"name": "SearchTypeJSON.direct", "kind": "postulate", "type": "P t0", "bodySize": 0, "source": "test/Succeed/SearchTypeJSON.agda", "range": "test/Succeed/SearchTypeJSON.agda:10.3-9"},
+    {"name": "SearchTypeJSON.viaPremises", "kind": "postulate", "type": "(x : Tm) → Q x → P x", "bodySize": 0, "source": "test/Succeed/SearchTypeJSON.agda", "range": "test/Succeed/SearchTypeJSON.agda:11.3-14", "with": ["x := t0"], "needs": ["(_ : Q x)"]}
+  ]
+}
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]TypeSearchHits
+Pattern "P(t0)"
+  1 definition an instance of it (generalises)
+  2 definitions a conclusion fitting it (instance-of)
