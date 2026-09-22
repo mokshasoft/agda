@@ -699,6 +699,9 @@ defaultOptions = Options
   , optWriteAST              = Nothing
   , optASTFile               = "agda-ast.json"
   , optASTFormat             = ReportJSON
+  , optDuplicateTypes        = False
+  , optDupFile               = "agda-duplicates.json"
+  , optDupFormat             = ReportJSON
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1207,6 +1210,17 @@ astFormatFlag s o = do
   fmt <- reportFormat "--ast-format" s
   return $ o { optASTFormat = fmt }
 
+duplicateTypesFlag :: Flag CommandLineOptions
+duplicateTypesFlag o = return $ o { optDuplicateTypes = True }
+
+dupFileFlag :: FilePath -> Flag CommandLineOptions
+dupFileFlag s o = return $ o { optDupFile = s }
+
+dupFormatFlag :: String -> Flag CommandLineOptions
+dupFormatFlag s o = do
+  fmt <- reportFormat "--dup-format" s
+  return $ o { optDupFormat = fmt }
+
 reportFormat :: MonadError String m => String -> String -> m ReportFormat
 reportFormat flag = \case
   "json" -> return ReportJSON
@@ -1424,6 +1438,12 @@ standardOptions =
                     "where to write the --write-ast output, or - for stdout, which the ReachableTrustBase warning also goes to (default: agda-ast.json)"
     , Option []     ["ast-format"] (ReqArg astFormatFlag "json|text")
                     "format for the --write-ast output. The default is json."
+    , Option []     ["duplicate-types"] (NoArg duplicateTypesFlag)
+                    "report definitions that share a name across modules or share an elaborated type"
+    , Option []     ["dup-file"] (ReqArg dupFileFlag "PATH")
+                    "where to write the --duplicate-types output, or - for stdout (default: agda-duplicates.json)"
+    , Option []     ["dup-format"] (ReqArg dupFormatFlag "json|text")
+                    "format for the --duplicate-types output. The default is json."
     ] ++ map (fmap lensPragmaOptions) pragmaOptions
 
 -- | Command line options of previous versions of Agda.

@@ -606,6 +606,9 @@ warningHighlighting' b w = case tcWarning w of
   -- AST dump (--write-ast)
   ReachableTrustBase{} -> mempty  -- assumptions may be in other files
 
+  -- Duplicate detection (--duplicate-types)
+  DuplicateDefinitions{} -> mempty  -- counts only; the definitions are in many files
+
 recordFieldWarningHighlighting ::
   RecordFieldWarning -> HighlightingInfoBuilder
 recordFieldWarningHighlighting = \case

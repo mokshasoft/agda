@@ -391,6 +391,8 @@ data WarningName
   | PostulateProofObligation_
   -- AST dump (--write-ast)
   | ReachableTrustBase_
+  -- Duplicate detection (--duplicate-types)
+  | DuplicateDefinitions_
   deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 instance NFData WarningName
@@ -637,3 +639,5 @@ warningNameDescription = \case
   PostulateProofObligation_        -> "Postulates shown as proof obligations with their types."
   -- AST dump
   ReachableTrustBase_              -> "Assumptions reachable from the entry point specified via --write-ast."
+  -- Duplicate detection
+  DuplicateDefinitions_            -> "Counts of definitions sharing a name or an elaborated type, found by --duplicate-types."

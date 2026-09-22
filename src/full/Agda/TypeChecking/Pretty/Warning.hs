@@ -741,6 +741,28 @@ prettyWarning = \case
         plural 0 _    = ""
         plural n what = show n ++ " " ++ what ++ (if n == 1 then "" else "s")
 
+    -- Counts only: a development can have hundreds of collisions, so the
+    -- listing belongs in the report file, which is written to be diffed.
+    -- Kept to short lines, since the surrounding renderer reflows long ones.
+    DuplicateDefinitions r -> vcat $ concat
+      [ [ "Sharing an elaborated type:" <+>
+            tally (drTypeGroups r) (drTypeMembers r)
+        , "Defined in more than one module:" <+>
+            tally (drNameGroups r) (drNameMembers r)
+        ]
+      , [ "Full report:" <+> text (drFile r) | drFile r /= "-" ]
+        -- The caveat is not decoration.  An exact match is a candidate to
+        -- read, not a conclusion to act on: parallel families must both
+        -- exist, and a copy can be carrying an architectural invariant.
+      , [ fsep $ pwords
+            "Duplication is often deliberate: candidates to read, not to delete." ]
+      ]
+      where
+        tally g d = text $
+          show g ++ " " ++ suffix g "group" ++ ", " ++
+          show d ++ " " ++ suffix d "definition"
+        suffix n what = what ++ (if n == 1 then "" else "s")
+
 instance PrettyTCM DataOrRecord_ where
   prettyTCM = \case
     IsData{}   -> "data"

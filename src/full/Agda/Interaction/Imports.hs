@@ -86,6 +86,7 @@ import Agda.TypeChecking.Primitive
 import Agda.TypeChecking.Pretty as P
 import Agda.TypeChecking.ASTDump (writeASTDump)
 import Agda.TypeChecking.DeadCode
+import Agda.TypeChecking.DuplicateTypes (findDuplicates)
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
 import Agda.TheTypeChecker
@@ -571,23 +572,28 @@ typeCheckMain mode src = do
   -- signature, not the act of type checking it, and a reused interface has
   -- been merged into 'stImports' by then, so this works either way and does
   -- not force a re-check.
-  when (mode == TypeCheck) $ reachabilityAnalyses src
+  when (mode == TypeCheck) $ signatureAnalyses src
 
   return $ CheckResult' mi src
 
--- | Has a whole-program analysis (@--dead-code@, @--write-ast@) been asked for
---   on this module?  They apply to the main module only.
+-- | Has a whole-program analysis (@--dead-code@, @--write-ast@,
+--   @--duplicate-types@) been asked for on this module?  They apply to the
+--   main module only.
 analysesRequested :: MainInterface -> TCM Bool
 analysesRequested = \case
   NotMainInterface -> pure False
   MainInterface _  -> do
     opts <- commandLineOptions
-    pure $ not $ null $ catMaybes [ optDeadCodeRoot opts, optWriteAST opts ]
+    pure $ or
+      [ isJust (optDeadCodeRoot opts)
+      , isJust (optWriteAST opts)
+      , optDuplicateTypes opts
+      ]
 
 -- | The whole-program analyses that run over the main module's signature:
---   @--dead-code@ and @--write-ast@.
-reachabilityAnalyses :: Source -> TCM ()
-reachabilityAnalyses src = do
+--   @--dead-code@, @--write-ast@ and @--duplicate-types@.
+signatureAnalyses :: Source -> TCM ()
+signatureAnalyses src = do
   opts <- commandLineOptions
   whenM (analysesRequested (MainInterface TypeCheck)) $ do
     srcDir <- takeDirectory . filePath <$> srcFilePath (srcOrigin src)
@@ -600,6 +606,11 @@ reachabilityAnalyses src = do
     whenJust (optWriteAST opts) $ \ rootStr -> do
       root <- entryPoint "--write-ast" rootStr
       writeASTDump projectDir (optASTFile opts) (optASTFormat opts) root
+
+    -- Unlike the two above this takes no entry point: it is a query over the
+    -- whole signature, not a traversal from a root.
+    when (optDuplicateTypes opts) $
+      findDuplicates projectDir (optDupFile opts) (optDupFormat opts)
   where
     entryPoint flag rootStr = lookupQNameByString rootStr >>= \case
       Just root -> pure root

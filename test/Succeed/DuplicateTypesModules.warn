@@ -1,0 +1,8 @@
+
+———— All done; warnings encountered ————————————————————————
+
+warning: -W[no]DuplicateDefinitions
+Sharing an elaborated type: 1 group, 3 definitions
+Defined in more than one module: 1 group, 2 definitions
+Full report: /dev/null
+Duplication is often deliberate: candidates to read, not to delete.

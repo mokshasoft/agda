@@ -4819,6 +4819,10 @@ data Warning
   | ReachableTrustBase (List1 TrustBaseItem)
     -- ^ Assumptions (postulates, unsafe definitions) reachable from the
     --   entry point given to @--write-ast@.
+
+  -- Duplicate detection (--duplicate-types)
+  | DuplicateDefinitions DuplicateReport
+    -- ^ How many definitions share a name or an elaborated type.
   deriving (Show, Generic)
 
 -- | One assumption reported by @--write-ast@.
@@ -4840,6 +4844,26 @@ data TrustBaseItem = TrustBaseItem
       -- ^ Further source-level definitions covered by the same site.
   , tbGenerated  :: Int
       -- ^ Machine-generated definitions covered by the same site.
+  }
+  deriving (Show, Generic)
+
+-- | Summary of what @--duplicate-types@ found.
+--
+--   Counts only.  A development can have hundreds of name collisions, most of
+--   them deliberate, so listing them in a warning would bury the compiler
+--   output; the full report goes to 'drFile', which is written to be read as
+--   a diff.
+data DuplicateReport = DuplicateReport
+  { drTypeGroups  :: Int
+      -- ^ Groups of definitions sharing an elaborated type.
+  , drTypeMembers :: Int
+      -- ^ Definitions in those groups.
+  , drNameGroups  :: Int
+      -- ^ Base names defined in more than one module.
+  , drNameMembers :: Int
+      -- ^ Definitions in those groups.
+  , drFile        :: FilePath
+      -- ^ Where the full report was written; @-@ for standard output.
   }
   deriving (Show, Generic)
 
@@ -4977,6 +5001,9 @@ warningName = \case
 
   -- AST dump
   ReachableTrustBase{} -> ReachableTrustBase_
+
+  -- Duplicate detection
+  DuplicateDefinitions{} -> DuplicateDefinitions_
 
 illegalRewriteWarningName :: IllegalRewriteRuleReason -> WarningName
 illegalRewriteWarningName = \case
@@ -6767,6 +6794,7 @@ instance NFData ExpandHidden
 instance NFData CandidateKind
 instance NFData Candidate
 instance NFData TrustBaseItem
+instance NFData DuplicateReport
 instance NFData Warning
 instance NFData RecordFieldWarning
 instance NFData TCWarning

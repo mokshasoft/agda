@@ -103,6 +103,13 @@ data CommandLineOptions = Options
       -- ^ Where to write the AST dump (@--ast-file=PATH@).
   , optASTFormat             :: ReportFormat
       -- ^ Output format for the AST dump (@--ast-format=json|text@).
+  , optDuplicateTypes        :: Bool
+      -- ^ Report duplicate definitions over the whole signature
+      --   (@--duplicate-types@).
+  , optDupFile               :: FilePath
+      -- ^ Where to write the duplicate report (@--dup-file=PATH@).
+  , optDupFormat             :: ReportFormat
+      -- ^ Output format for the duplicate report (@--dup-format=json|text@).
   }
   deriving (Show, Generic)
 

@@ -144,6 +144,7 @@ instance EmbPrj Warning where
     UnusedRecordFields a                        -> icodeN 76 UnusedRecordFields a
     PostulateProofObligation a b                -> icodeN 77 PostulateProofObligation a b
     ReachableTrustBase a                        -> icodeN 78 ReachableTrustBase a
+    DuplicateDefinitions a                      -> icodeN 79 DuplicateDefinitions a
 
   value = vcase $ \ case
     [0, a, b]            -> valuN UnreachableClauses a b
@@ -226,6 +227,7 @@ instance EmbPrj Warning where
     [76, a]              -> valuN UnusedRecordFields a
     [77, a, b]           -> valuN PostulateProofObligation a b
     [78, a]              -> valuN ReachableTrustBase a
+    [79, a]              -> valuN DuplicateDefinitions a
     _ -> malformed
 
 instance EmbPrj UselessPublicReason
@@ -281,6 +283,10 @@ instance EmbPrj OptionWarning where
 instance EmbPrj TrustBaseItem where
   icod_ (TrustBaseItem a b c d e) = icodeN' TrustBaseItem a b c d e
   value = valueN TrustBaseItem
+
+instance EmbPrj DuplicateReport where
+  icod_ (DuplicateReport a b c d e) = icodeN' DuplicateReport a b c d e
+  value = valueN DuplicateReport
 
 instance EmbPrj WarningModeError where
   icod_ = \case
