@@ -619,6 +619,7 @@ signatureAnalyses src = do
     whenJust (optSearchType opts) $ \ pat ->
       searchType projectDir (srcModuleName src) pat
         (optSearchFile opts) (optSearchFormat opts) (optSearchLimit opts)
+        (not (optSearchUnanchored opts))
   where
     entryPoint flag rootStr = lookupQNameByString rootStr >>= \case
       Just root -> pure root

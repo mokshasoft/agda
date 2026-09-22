@@ -706,6 +706,7 @@ defaultOptions = Options
   , optSearchFile            = "-"
   , optSearchFormat          = ReportText
   , optSearchLimit           = 40
+  , optSearchUnanchored      = False
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1236,6 +1237,9 @@ searchFormatFlag s o = do
   fmt <- reportFormat "--search-format" s
   return $ o { optSearchFormat = fmt }
 
+searchUnanchoredFlag :: Flag CommandLineOptions
+searchUnanchoredFlag o = return $ o { optSearchUnanchored = True }
+
 searchLimitFlag :: String -> Flag CommandLineOptions
 searchLimitFlag s o = case reads s of
   [(n, "")] | n >= 0 -> return $ o { optSearchLimit = n }
@@ -1472,7 +1476,9 @@ standardOptions =
     , Option []     ["search-format"] (ReqArg searchFormatFlag "json|text")
                     "format for the --search-type output. The default is text."
     , Option []     ["search-limit"] (ReqArg searchLimitFlag "N")
-                    "list at most N hits, 0 for all (default: 40)"
+                    "list at most N hits per direction, 0 for all (default: 40)"
+    , Option []     ["search-unanchored"] (NoArg searchUnanchoredFlag)
+                    "for --search-type instance-of hits, also match conclusions headed by a variable"
     ] ++ map (fmap lensPragmaOptions) pragmaOptions
 
 -- | Command line options of previous versions of Agda.

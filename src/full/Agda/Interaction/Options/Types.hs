@@ -118,6 +118,11 @@ data CommandLineOptions = Options
       -- ^ Output format for the search report (@--search-format=json|text@).
   , optSearchLimit           :: Int
       -- ^ How many hits to list (@--search-limit=N@); @0@ for all.
+  , optSearchUnanchored      :: Bool
+      -- ^ Let a candidate's telescope variable stand at the /head/ of an
+      --   @instance-of@ match (@--search-unanchored@).  Strictly more
+      --   complete, but a conclusion that is a bare variable then matches
+      --   every pattern there is.
   }
   deriving (Show, Generic)
 

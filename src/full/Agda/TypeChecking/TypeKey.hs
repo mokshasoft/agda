@@ -21,6 +21,7 @@ module Agda.TypeChecking.TypeKey
   , TypeKey (..)
   , typeKey
   , flattenType
+  , flattenTerm
   , tokenArity
     -- * Pattern matching
   , isWildcard
@@ -134,6 +135,12 @@ flattenType t = goType t []
 -- | Tokens are accumulated as a difference list: the traversal is a right
 --   fold over a tree, and appending at each node would be quadratic.
 type DL = [Token] -> [Token]
+
+-- | The flatterm of a bare term.  Used to compare two terms for syntactic
+--   equality where 'Term' has no 'Eq' instance of its own -- in particular to
+--   check that a hole bound twice was bound to the same thing.
+flattenTerm :: Term -> [Token]
+flattenTerm t = goTerm t []
 
 goType :: Type -> DL
 goType = goTerm . unEl   -- El sort dropped; see 'flattenType'.

@@ -4877,13 +4877,17 @@ data DuplicateReport = DuplicateReport
 --   matches thousands of types, and the ranked listing belongs in the report
 --   rather than in the compiler output.
 data TypeSearchReport = TypeSearchReport
-  { tsPattern :: String
+  { tsPattern   :: String
       -- ^ The pattern as the user wrote it.
-  , tsHits    :: Int
-      -- ^ Definitions whose type matches it.
-  , tsShown   :: Int
-      -- ^ How many of them the report lists; see @--search-limit@.
-  , tsFile    :: FilePath
+  , tsHits      :: Int
+      -- ^ Definitions that are an instance of the pattern.
+  , tsShown     :: Int
+      -- ^ How many of those the report lists; see @--search-limit@.
+  , tsInstHits  :: Int
+      -- ^ Definitions whose conclusion instantiates to the pattern.
+  , tsInstShown :: Int
+      -- ^ How many of those the report lists.
+  , tsFile      :: FilePath
       -- ^ Where the report was written; @-@ for standard output.
   }
   deriving (Show, Generic)

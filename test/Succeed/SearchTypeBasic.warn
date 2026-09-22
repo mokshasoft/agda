@@ -2,5 +2,7 @@
 ———— All done; warnings encountered ————————————————————————
 
 warning: -W[no]TypeSearchHits
-2 definitions match "Wrap(Wrap(_))"
+Pattern "Wrap(Wrap(_))"
+  2 definitions an instance of it (generalises)
+  1 definition a conclusion fitting it (instance-of)
 Full report: /dev/null

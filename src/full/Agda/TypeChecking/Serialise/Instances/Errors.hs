@@ -291,7 +291,7 @@ instance EmbPrj DuplicateReport where
   value = valueN DuplicateReport
 
 instance EmbPrj TypeSearchReport where
-  icod_ (TypeSearchReport a b c d) = icodeN' TypeSearchReport a b c d
+  icod_ (TypeSearchReport a b c d e f) = icodeN' TypeSearchReport a b c d e f
   value = valueN TypeSearchReport
 
 instance EmbPrj WarningModeError where

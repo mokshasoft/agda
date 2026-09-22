@@ -20,6 +20,29 @@
 --   everything in scope/ does not care where the lemma lives or what it is
 --   called.
 --
+--   == Two questions, reported apart
+--
+--   The pattern is matched in both directions.  They answer different
+--   questions, and one ranking over both would be comparing things that are
+--   not comparable, so they are listed as separate sections.
+--
+--   [@generalises@] Definitions that are an instance of the pattern: the
+--     pattern's @_@ are the holes.  /Is my new lemma a special case of
+--     something?/  Matched at any subterm, so a pattern finds a lemma whose
+--     conclusion has that shape without spelling out the telescope in front
+--     of it.
+--
+--   [@instance-of@] Definitions whose conclusion instantiates to the
+--     pattern: the candidate's own telescope variables are the holes.
+--     /Would this lemma close my goal?/  Matched against the conclusion
+--     only, because that is what the question is about.
+--
+--   An @instance-of@ hit reports what the match left undetermined, under
+--   @needs@.  Matching a conclusion says the lemma /applies/, not that it
+--   /closes/ anything: a lemma with three unproven premises matches as
+--   readily as one with none, and the difference is the whole cost of taking
+--   it.  See 'Agda.TypeChecking.TypeMatch.residualPremises'.
+--
 --   == Ranking, and where it differs from the obvious plan
 --
 --   Ranking is not optional.  In a dependently typed development the
@@ -31,41 +54,28 @@
 --   The obvious plan is inverse document frequency over the pattern's head
 --   symbols, which is what rescues a /similarity/ search: there, two hits
 --   share different subsets of the query's symbols, and the one sharing a
---   rare symbol is worth more.  **That signal does not exist here.** This is
---   exact pattern matching, so every hit contains every symbol of the
---   pattern, and an IDF score over the pattern is one number shared by the
---   whole result set.  It cannot order anything.
+--   rare symbol is worth more.  That signal does not exist here.  This is
+--   exact matching, so every hit contains every symbol of the pattern, and
+--   an IDF score over the pattern is one number shared by the whole result
+--   set.  It cannot order anything.
 --
---   What does discriminate is how much of the hit the pattern accounts for.
---   @_ ⟶* _@ against a lemma whose entire type is @a ⟶* b@ has explained
---   the lemma; against a forty-premise lemma that happens to mention @⟶*@
---   in its ninth hypothesis it has explained almost nothing.  So the primary
---   key is 'hCoverage', the fraction of the candidate's type accounted for by
---   the pattern's concrete structure, and it is exactly what pushes the
---   thousand incidental @Γ ⊢ _ ∷ _@ matches below the handful of real ones.
+--   What discriminates depends on the direction:
 --
---   Document frequency is still computed, but for the honest purpose: it is
---   reported for each symbol of the /pattern/, so that a query returning two
+--     * @generalises@ ranks on coverage, the fraction of the candidate's
+--       type accounted for by the pattern's concrete structure.  @_ ⟶* _@
+--       against a lemma whose entire type is @a ⟶* b@ has explained the
+--       lemma; against a forty-premise lemma mentioning @⟶*@ in its ninth
+--       hypothesis it has explained almost nothing.
+--     * @instance-of@ ranks on what is left to do -- fewest undetermined
+--       premises first, then the tightest instantiation.  Coverage reads
+--       backwards here, since such a hit is by construction /more general/
+--       than the pattern, so coverage would measure its generality rather
+--       than its fit.
+--
+--   Document frequency is still computed, for the honest purpose: it is
+--   reported per symbol of the /pattern/, so that a query returning two
 --   thousand hits says why -- its symbols are ubiquitous -- instead of
 --   leaving the user to guess.  See 'Selectivity'.
---
---   == What this cut does not do
---
---   Two things from the design are deliberately absent, and both are
---   describable rather than subtle:
---
---     * /The directional modes/ -- @instance-of@ (\"would this lemma close my
---       goal\") and @generalises@ (\"is my new lemma a special case of
---       something\").  Both need the /candidate's/ own bound variables to be
---       flexible, which is matching under its telescope rather than the
---       wildcard matching done here.  Only the pattern's holes are flexible
---       in this cut.
---     * /The substitution that made it match/.  The wildcards' bindings are
---       recovered as token sequences, and a token sequence cannot be printed
---       as a term: that needs the match repeated on the 'Type' itself for the
---       results actually shown.  The architecture for it is the usual one --
---       cheap filter over flatterms, precise confirmation on the survivors --
---       and 'matchesIn' already returns the bindings it would need.
 module Agda.TypeChecking.TypeSearch
   ( searchType
   ) where
@@ -98,15 +108,17 @@ import Agda.TypeChecking.Pretty (prettyTCM)
 import Agda.TypeChecking.Reduce (instantiateFull)
 import Agda.TypeChecking.Rules.Term (isType_)
 import Agda.TypeChecking.TypeKey
-  ( Token (..), flattenType, matchesIn, subtermSize )
+  ( Token (..), flattenTerm, flattenType, matchesIn, subtermSize )
+import Agda.TypeChecking.TypeMatch
+  ( Binding (..), matchWith, queryHoles, residualPremises, stripPis
+  , stripPisUpTo, telescopeHoles )
 import Agda.TypeChecking.Warnings (warning)
 
 ---------------------------------------------------------------------------
 -- * Elaborating the pattern
 ---------------------------------------------------------------------------
 
--- | Parse and elaborate the pattern in the scope of the main module, and
---   return its flatterm.
+-- | Parse and elaborate the pattern in the scope of the main module.
 --
 --   The pattern is checked as an ordinary type, which is what makes it agree
 --   with the candidates: implicit arguments are inserted on both sides by the
@@ -115,30 +127,18 @@ import Agda.TypeChecking.Warnings (warning)
 --   surface syntax instead would compare two things that are not the same
 --   shape.
 --
---   Each @_@ becomes a metavariable, which is what a wildcard is (see
---   'isWildcard').  Elaboration is allowed to /solve/ some of them from the
---   others -- in @subTm τ _ ≡ subTm τ _@ the two holes are forced to agree in
---   type -- and that is wanted: it makes the pattern more precise than it was
---   written.
---
---   All of this runs inside 'localTCState'.  Elaborating a pattern creates
---   metavariables and constraints, and none of that may survive into the
---   state of the module being checked, where it would be reported as unsolved.
---   Only the flatterm, which is plain data, comes back out.
-elaboratePattern :: TopLevelModuleName -> String -> TCM ([Token], String)
-elaboratePattern top str = do
-  scope <- getVisitedModule top >>= \case
-    Just mi -> pure $ iInsideScope (miInterface mi)
-    Nothing -> genericError $
-      "--search-type: the scope of " ++ prettyShow top ++ " is not available"
-  localTCState $ withScope_ scope $ do
-    c <- parseExpr noRange str
-    a <- concreteToAbstract_ (c :: C.Expr)
-    t <- instantiateFull =<< isType_ (a :: A.Expr)
-    -- Printed here, not by the caller: outside this block the pattern's
-    -- metavariables are gone with the rest of the discarded state.
-    shown <- oneLine . render <$> prettyTCM t
-    pure (flattenType t, shown)
+--   Each @_@ becomes a metavariable, which is what a hole is.  Elaboration is
+--   allowed to /solve/ some of them from the others -- in @subTm τ _ ≡ subTm
+--   τ _@ the two holes are forced to agree in type -- and that is wanted: it
+--   makes the pattern more precise than it was written, which is why the
+--   report prints the elaborated form.
+elaboratePattern :: String -> TCM (Type, String)
+elaboratePattern str = do
+  c <- parseExpr noRange str
+  a <- concreteToAbstract_ (c :: C.Expr)
+  t <- instantiateFull =<< isType_ (a :: A.Expr)
+  shown <- oneLine . render <$> prettyTCM t
+  pure (t, shown)
 
 ---------------------------------------------------------------------------
 -- * Candidates
@@ -147,9 +147,9 @@ elaboratePattern top str = do
 -- | A definition the pattern is matched against.
 --
 --   The flatterm is computed once per definition and kept: it is needed for
---   the match, for the size the coverage is a fraction of, and for the
---   document frequencies.  Nothing is pretty-printed here -- that happens
---   only for the results actually reported.
+--   the filter, for the size coverage is a fraction of, and for the document
+--   frequencies.  Nothing is pretty-printed here -- that happens only for
+--   the results actually reported.
 data Cand = Cand
   { cdQName    :: QName
   , cdName     :: String
@@ -165,8 +165,8 @@ data Cand = Cand
 --
 --   Unlike @--dead-code@ and @--duplicate-types@ this is deliberately /not/
 --   restricted to the project.  Those report things the reader might change,
---   so a standard library hit would be noise; a search asks whether the lemma
---   exists at all, and it is just as useful to learn that it is already in a
+--   so a library hit would be noise; a search asks whether the lemma exists
+--   at all, and it is just as useful to learn that it is already in a
 --   library.  External hits are marked, not dropped.
 candidates :: FilePath -> ModuleFileTable -> Definitions -> [Cand]
 candidates projectDir modTable defs = sortOn sortKey
@@ -204,17 +204,12 @@ sortKey :: Cand -> (String, Maybe FilePath, NameId)
 sortKey c = (cdName c, cdSource c, nameId (qnameName (cdQName c)))
 
 ---------------------------------------------------------------------------
--- * Matching and ranking
+-- * The generalises direction
 ---------------------------------------------------------------------------
 
 data Hit = Hit
   { hCand     :: Cand
   , hCoverage :: Double
-      -- ^ Fraction of the candidate's type explained by the pattern's
-      --   concrete structure.  The ranking key; see the module header.
-  , hOffset   :: Int
-      -- ^ Where in the candidate's flatterm the match starts.  Zero means
-      --   the pattern matched the whole type rather than a part of it.
   , hWhole    :: Bool
   }
 
@@ -224,8 +219,8 @@ data Hit = Hit
 --   against a lemma with three such premises matches three times.  That is
 --   one hit, scored by its best position, rather than three rows saying the
 --   same thing.
-matchCand :: [Token] -> Cand -> Maybe Hit
-matchCand pat c = case matchesIn pat (cdTokens c) of
+matchGen :: [Token] -> Cand -> Maybe Hit
+matchGen pat c = case matchesIn pat (cdTokens c) of
   []       -> Nothing
   (m : ms) -> Just $ foldl' better (mk m) (map mk ms)
   where
@@ -234,25 +229,97 @@ matchCand pat c = case matchesIn pat (cdTokens c) of
     mk (off, binds) = Hit
       { hCand     = c
       , hCoverage = coverage off binds
-      , hOffset   = off
       , hWhole    = off == 0
       }
 
     -- The pattern's concrete structure is what it matched minus what its
-    -- holes absorbed: a hole explains nothing about the candidate.  Taken as
-    -- a fraction of the whole type, so that a pattern which is the entire
-    -- statement of a small lemma outranks the same pattern buried in a large
-    -- one.
+    -- holes absorbed: a hole explains nothing about the candidate.
     coverage off binds
       | total == 0 = 0
       | otherwise  =
           fromIntegral (matched - sum (map length binds)) / fromIntegral total
       where
-        -- What the pattern consumed: the subterm of the candidate that starts
-        -- where the match did.
         matched = maybe 0 id $ subtermSize $ drop off $ cdTokens c
 
     better a b = if hCoverage b > hCoverage a then b else a
+
+---------------------------------------------------------------------------
+-- * The instance-of direction
+---------------------------------------------------------------------------
+
+data Inst = Inst
+  { iCand       :: Cand
+  , iTel        :: Telescope
+  , iBinds      :: [Binding]
+  , iUnresolved :: Int
+      -- ^ Telescope entries the match did not determine: what would still
+      --   have to be supplied.  The primary ranking key.
+  , iSubSize    :: Int
+      -- ^ Total size of the instantiation.  A lemma that /is/ the pattern
+      --   beats one bent a long way to reach it.
+  }
+
+-- | Does the candidate instantiate to the pattern, after being applied to
+--   some prefix of its arguments?
+--
+--   Every prefix is tried, not just the full telescope.  A lemma
+--   @f : Nat -> Nat -> Nat@ closes a goal @Nat -> Nat -> Nat@ by taking no
+--   arguments at all and a goal @Nat@ by taking two; stripping only the whole
+--   telescope would find the second and silently miss the first, which is the
+--   commoner question.  The best prefix wins -- the one leaving least to do.
+matchInst :: Bool -> Term -> Cand -> Maybe Inst
+matchInst anchored patTm c =
+  case [ i | k <- [0 .. nMax], Just i <- [tryAt k] ] of
+    []       -> Nothing
+    (i : is) -> Just (foldl' tighter i is)
+  where
+    nMax = length (telToList (fst (stripPis (cdType c))))
+
+    tighter a b = if instKey b < instKey a then b else a
+
+    tryAt k
+      | not (headCompatible anchored patTm (unEl rest)) = Nothing
+      | otherwise = do
+          binds <- matchWith (telescopeHoles k anchored) (unEl rest) patTm
+          let residual = residualPremises tel binds
+          pure Inst
+            { iCand       = c
+            , iTel        = tel
+            , iBinds      = binds
+            , iUnresolved = length [ () | (_, _, False) <- residual ]
+            , iSubSize    =
+                sum [ length (flattenTerm t) | TelBinding _ t <- binds ]
+            }
+      where
+        (tel, rest) = stripPisUpTo k (cdType c)
+
+-- | Cheap rejection before the real match: the pattern's head symbol has to
+--   occur as the candidate's conclusion head.
+--
+--   Sound only because a hole may not stand at the head when anchored.  When
+--   it may, a variable-headed conclusion has to be let through -- and that is
+--   exactly the case that matches everything, which is why anchoring is the
+--   default.
+headCompatible :: Bool -> Term -> Term -> Bool
+headCompatible anchored q concl = case headSym concl of
+  Just b  -> maybe True (== b) (headSym q)
+  Nothing -> case concl of
+    -- Structural: not a head a hole could stand at, so let the matcher decide.
+    Pi{}   -> True
+    Sort{} -> True
+    Lam{}  -> True
+    -- A variable or metavariable at the head: the case anchoring exists for.
+    _      -> not anchored
+
+headSym :: Term -> Maybe NameId
+headSym = \case
+  Def q _   -> Just (nameId (qnameName q))
+  Con c _ _ -> Just (nameId (qnameName (conName c)))
+  _         -> Nothing
+
+---------------------------------------------------------------------------
+-- * Selectivity
+---------------------------------------------------------------------------
 
 -- | How discriminating the pattern is, per symbol: in how many of the
 --   candidate types each of its constants occurs.
@@ -305,43 +372,88 @@ searchType
   -> String             -- ^ The pattern.
   -> FilePath           -- ^ Where the report goes.
   -> ReportFormat
-  -> Int                -- ^ How many hits to list; @0@ for all.
+  -> Int                -- ^ How many hits to list per direction; @0@ for all.
+  -> Bool               -- ^ Anchor on the head symbol?
   -> TCM ()
-searchType projectDir top pat outFile format limit = do
-  (tokens, patStr) <- elaboratePattern top pat
-  defs     <- allDefinitions
-  modTable <- moduleFileTable
+searchType projectDir top pat outFile format limit anchored = do
+  scope <- getVisitedModule top >>= \case
+    Just mi -> pure $ iInsideScope (miInterface mi)
+    Nothing -> genericError $
+      "--search-type: the scope of " ++ prettyShow top ++ " is not available"
 
-  let cands = candidates projectDir modTable defs
-      hits  = rank [ h | c <- cands, Just h <- [matchCand tokens c] ]
-      shown = if limit <= 0 then hits else take limit hits
-      sel   = selectivity defs cands tokens
+  -- Everything happens inside 'localTCState'.  Elaborating a pattern creates
+  -- metavariables and constraints, and none of that may survive into the
+  -- state of the module being checked, where it would be reported as
+  -- unsolved.  Rendering has to print terms that mention those metavariables,
+  -- so it runs inside too, and only the counts -- plain data -- come back
+  -- out.  The warning is raised afterwards: one raised inside would be rolled
+  -- back with the rest of the state.
+  (nGen, nGenShown, nInst, nInstShown) <-
+    localTCState $ withScope_ scope $ do
+      (patTy, patStr) <- elaboratePattern pat
+      defs     <- allDefinitions
+      modTable <- moduleFileTable
 
-  unless (null hits) $
+      let patToks = flattenType patTy
+          patTm   = unEl patTy
+          cands   = candidates projectDir modTable defs
+
+          gens  = sortOn genKey  [ h | c <- cands, Just h <- [matchGen patToks c] ]
+          insts = sortOn instKey [ i | c <- cands, Just i <- [matchInst anchored patTm c] ]
+
+          shownG = cutTo limit gens
+          shownI = cutTo limit insts
+          sel    = selectivity defs cands patToks
+
+      withOutputSink outFile $ \ put -> case format of
+        ReportText ->
+          renderText put projectDir pat patStr patTy sel
+            (length gens) shownG (length insts) shownI
+        ReportJSON ->
+          renderJSON put projectDir pat patStr patTy sel
+            (length gens) shownG (length insts) shownI
+
+      pure (length gens, length shownG, length insts, length shownI)
+
+  unless (nGen == 0 && nInst == 0) $
     warning $ TypeSearchHits TypeSearchReport
-      { tsPattern = pat
-      , tsHits    = length hits
-      , tsShown   = length shown
-      , tsFile    = outFile
+      { tsPattern   = pat
+      , tsHits      = nGen
+      , tsShown     = nGenShown
+      , tsInstHits  = nInst
+      , tsInstShown = nInstShown
+      , tsFile      = outFile
       }
-
-  withOutputSink outFile $ \ put -> case format of
-    ReportJSON -> renderJSON put projectDir pat patStr sel (length hits) shown
-    ReportText -> renderText put projectDir pat patStr sel (length hits) shown
 
   reportSLn "tc.search.type" 10 $
     "Wrote type search report to " ++ outFile ++
-    " (" ++ show (length hits) ++ " hits)"
+    " (" ++ show nGen ++ " generalises, " ++ show nInst ++ " instance-of)"
 
--- | Rank by how much of the hit the pattern explains, then prefer the
---   smaller statement and the smaller proof.  Ties break on the name, so the
---   report is stable under unrelated edits.
-rank :: [Hit] -> [Hit]
-rank = sortOn $ \ h ->
+-- | @--search-limit@; @0@ means everything.  A top-level definition rather
+--   than a local one because it is used at two result types.
+cutTo :: Int -> [a] -> [a]
+cutTo n xs
+  | n <= 0    = xs
+  | otherwise = take n xs
+
+-- | Most of the candidate explained first, then the smaller statement and
+--   the smaller proof.  Ties break on the name, so the report is stable
+--   under unrelated edits.
+genKey :: Hit -> (Double, Int, Int, (String, Maybe FilePath, NameId))
+genKey h =
   ( negate (hCoverage h)
   , length (cdTokens (hCand h))
   , cdBodySize (hCand h)
   , sortKey (hCand h)
+  )
+
+-- | Least left to do first, then the tightest instantiation.
+instKey :: Inst -> (Int, Int, Int, (String, Maybe FilePath, NameId))
+instKey i =
+  ( iUnresolved i
+  , iSubSize i
+  , cdBodySize (iCand i)
+  , sortKey (iCand i)
   )
 
 ---------------------------------------------------------------------------
@@ -355,13 +467,17 @@ data Row = Row
   , rSource   :: Maybe FilePath
   , rRange    :: String
   , rBodySize :: Int
-  , rCoverage :: Double
-  , rWhole    :: Bool
   , rExternal :: Bool
+  , rCoverage :: Maybe Double
+  , rWhole    :: Bool
+  , rSubst    :: [String]
+      -- ^ What the holes were bound to, as @name := term@.
+  , rResidual :: [String]
+      -- ^ Telescope entries the match did not determine.
   }
 
-mkRow :: FilePath -> Hit -> TCM Row
-mkRow projectDir h = do
+baseRow :: FilePath -> Cand -> TCM Row
+baseRow projectDir c = do
   ty <- oneLine . render <$> prettyTCM (cdType c)
   pure Row
     { rName     = cdName c
@@ -370,11 +486,77 @@ mkRow projectDir h = do
     , rSource   = relativeTo projectDir <$> cdSource c
     , rRange    = trustedRange projectDir (cdSource c) (cdQName c)
     , rBodySize = cdBodySize c
-    , rCoverage = hCoverage h
-    , rWhole    = hWhole h
     , rExternal = cdExternal c
+    , rCoverage = Nothing
+    , rWhole    = False
+    , rSubst    = []
+    , rResidual = []
     }
-  where c = hCand h
+
+-- | A @generalises@ hit.
+--
+--   The substitution is recovered by matching again on the 'Type', where
+--   binders are explicit: the flatterm cannot produce a 'Term'.  It is shown
+--   only when the pattern matches the conclusion, where the bound terms live
+--   in exactly the telescope's context and can be printed correctly.  A match
+--   buried deeper is still reported, just without its substitution -- the
+--   alternative is printing terms against the wrong context, which would be
+--   worse than printing nothing.
+genRow :: FilePath -> Type -> Hit -> TCM Row
+genRow projectDir patTy h = do
+  r <- baseRow projectDir (hCand h)
+  let (tel, concl) = stripPis (cdType (hCand h))
+  sub <- case matchWith queryHoles (unEl patTy) (unEl concl) of
+    Nothing -> pure []
+    Just bs -> addContext tel $ mapM showHole [ b | b@HoleBinding{} <- bs ]
+  pure r { rCoverage = Just (hCoverage h)
+         , rWhole    = hWhole h
+         , rSubst    = sub
+         }
+
+showHole :: Binding -> TCM String
+showHole = \case
+  HoleBinding n t -> do
+    d <- oneLine . render <$> prettyTCM t
+    pure $ "_" ++ show (n + 1 :: Int) ++ " := " ++ d
+  TelBinding n t -> do
+    d <- oneLine . render <$> prettyTCM t
+    pure $ "@" ++ show n ++ " := " ++ d
+
+-- | An @instance-of@ hit, with the instantiation and what it left open.
+--
+--   The bound terms come from the /pattern/, which is closed, so they print
+--   without a context.  The residual premises come from the candidate's
+--   telescope and must be printed under it, or their variables would read as
+--   the wrong binders.
+instRow :: FilePath -> Inst -> TCM Row
+instRow projectDir i = do
+  r <- baseRow projectDir (iCand i)
+  let tel      = iTel i
+      residual = residualPremises tel (iBinds i)
+      names    = [ n | (n, _, _) <- residual ]
+      n'       = length names
+  sub <- sequence
+    [ do d <- oneLine . render <$> prettyTCM t
+         pure $ nameAt names n' ix ++ " := " ++ d
+    | TelBinding ix t <- iBinds i
+    ]
+  left <- addContext tel $ sequence
+    [ do d <- oneLine . render <$> prettyTCM (unDom dom)
+         pure $ wrap dom (n ++ " : " ++ d)
+    | (n, dom, False) <- residual
+    ]
+  pure r { rSubst = sub, rResidual = left }
+  where
+    -- Telescope position p has de Bruijn index n - 1 - p at the conclusion.
+    nameAt names n' ix =
+      let p = n' - 1 - ix
+      in  if p >= 0 && p < length names then names !! p else "?"
+
+    wrap dom s = case getHiding dom of
+      Hidden     -> "{" ++ s ++ "}"
+      Instance{} -> "⦃ " ++ s ++ " ⦄"
+      NotHidden  -> "(" ++ s ++ ")"
 
 pct :: Double -> Int
 pct x = round (100 * x)
@@ -384,57 +566,69 @@ pct x = round (100 * x)
 ---------------------------------------------------------------------------
 
 renderText
-  :: Sink -> FilePath -> String -> String -> [Selectivity] -> Int -> [Hit]
-  -> TCM ()
-renderText put projectDir pat patStr sel total shown = do
+  :: Sink -> FilePath -> String -> String -> Type -> [Selectivity]
+  -> Int -> [Hit] -> Int -> [Inst] -> TCM ()
+renderText put projectDir pat patStr patTy sel nGen shownG nInst shownI = do
   put $ unlines $ concat
     [ [ "Type search"
       , ""
-      , "Pattern:   " ++ pat
+      , "Pattern:    " ++ pat
       -- Elaboration inserts implicit arguments and may solve some holes from
       -- the others, so what was matched is routinely more precise than what
       -- was typed; a surprising result set is usually explained here.
       , "Elaborated: " ++ patStr
-      , "Hits: " ++ show total
-          ++ (if length shown < total
-                then " (" ++ show (length shown) ++ " listed)" else "")
       , ""
       ]
     , selectivityLines sel
-    , [ "  Ranked by how much of each hit the pattern accounts for, so a"
-      , "  lemma the pattern nearly is comes before one that merely mentions"
-      , "  the shape somewhere.  `body` is the elaborated size of the proof."
-      , ""
-      ]
     ]
-  mapM_ one shown
+  heading "AN INSTANCE OF THE PATTERN (generalises)" nGen (length shownG)
+    [ "  Is my new lemma a special case of something?  Ranked by how much of"
+    , "  each hit the pattern accounts for."
+    ]
+  mapM_ (\ h -> putRow =<< genRow projectDir patTy h) shownG
+  heading "CONCLUSION FITS THE PATTERN (instance-of)" nInst (length shownI)
+    [ "  Would this lemma close my goal?  Ranked by how little is left to do."
+    , "  `needs` is what the match did not determine -- matching a conclusion"
+    , "  says the lemma applies, not that it closes anything."
+    ]
+  mapM_ (\ i -> putRow =<< instRow projectDir i) shownI
   where
-    one h = do
-      r <- mkRow projectDir h
-      put $ unlines $ renderRow r
+    putRow r = put $ unlines $ renderRow r
+
+    heading title total listed blurb = put $ unlines $ concat
+      [ [ "== " ++ title ++ " ==", "" ]
+      , [ "  " ++ show total ++ " hit" ++ (if total == 1 then "" else "s")
+            ++ (if listed < total
+                  then " (" ++ show listed ++ " listed)" else "")
+        , "" ]
+      , if total == 0 then [] else blurb ++ [ "" ]
+      ]
 
 selectivityLines :: [Selectivity] -> [String]
 selectivityLines [] = []
 selectivityLines sel = concat
-  [ [ "  Pattern symbols, and how many types in scope mention each --" ]
-  , [ "  a pattern built only from common ones cannot return a short list:" ]
-  , [ "" ]
+  [ [ "  Pattern symbols, and how many types in scope mention each --"
+    , "  a pattern built only from common ones cannot return a short list:"
+    , "" ]
   , [ "    " ++ pad 28 (selSymbol s) ++ show (selDocs s) ++ " types" | s <- sel ]
   , [ "" ]
   ]
 
 renderRow :: Row -> [String]
 renderRow r = concat
-  [ [ "  " ++ rName r
-        ++ (if rExternal r then "  (external)" else "")
-        ++ "  [" ++ show (pct (rCoverage r)) ++ "%"
-        ++ (if rWhole r then ", whole type" else "")
-        ++ ", body " ++ show (rBodySize r) ++ "]" ]
+  [ [ "  " ++ rName r ++ (if rExternal r then "  (external)" else "") ++ tags ]
   , [ "    : " ++ rType r ]
+  , [ "    with " ++ joinCommas (rSubst r)    | not (null (rSubst r))    ]
+  , [ "    needs " ++ joinCommas (rResidual r) | not (null (rResidual r)) ]
   , [ "    " ++ loc | let loc = location r, not (null loc) ]
   , [ "" ]
   ]
   where
+    tags = "  [" ++ joinCommas (concat
+      [ [ show (pct cv) ++ "%" | Just cv <- [rCoverage r] ]
+      , [ "whole type" | rWhole r ]
+      , [ "body " ++ show (rBodySize r) ]
+      ]) ++ "]"
     location x
       | not (null (rRange x)) = rRange x
       | otherwise             = maybe "" id (rSource x)
@@ -444,35 +638,47 @@ renderRow r = concat
 ---------------------------------------------------------------------------
 
 renderJSON
-  :: Sink -> FilePath -> String -> String -> [Selectivity] -> Int -> [Hit]
-  -> TCM ()
-renderJSON put projectDir pat patStr sel total shown = do
+  :: Sink -> FilePath -> String -> String -> Type -> [Selectivity]
+  -> Int -> [Hit] -> Int -> [Inst] -> TCM ()
+renderJSON put projectDir pat patStr patTy sel nGen shownG nInst shownI = do
   put $ unlines $ ("{" :) $ concat
     [ withComma $ jField 1 "pattern" (JStr pat)
     , withComma $ jField 1 "elaborated" (JStr patStr)
     , withComma $ jObjField 1 "counts"
-        [ ("hits",   JNum total)
-        , ("listed", JNum (length shown))
+        [ ("generalises",       JNum nGen)
+        , ("generalisesListed", JNum (length shownG))
+        , ("instanceOf",        JNum nInst)
+        , ("instanceOfListed",  JNum (length shownI))
         ]
     , withComma $ jArrField 1 "patternSymbols"
         [ JObj [ ("symbol", JStr (selSymbol s)), ("types", JNum (selDocs s)) ]
         | s <- sel ]
     ]
-  put $ indent 1 ++ jsonString "hits" ++ ": ["
-  n <- streamArray put 2 (fmap rowJ . mkRow projectDir) shown
-  put $ (if n == 0 then "" else "\n" ++ indent 1) ++ "]\n}\n"
+  jsonArray put "generalises" (genRow projectDir patTy) shownG
+  put ",\n"
+  jsonArray put "instanceOf" (instRow projectDir) shownI
+  put "\n}\n"
+
+-- | One JSON array of rendered rows, streamed so a row is built only when it
+--   is about to be written.  Top level, since it serves both directions.
+jsonArray :: Sink -> String -> (a -> TCM Row) -> [a] -> TCM ()
+jsonArray put k mk xs = do
+  put $ indent 1 ++ jsonString k ++ ": ["
+  n <- streamArray put 2 (fmap rowJ . mk) xs
+  put $ (if n == 0 then "" else "\n" ++ indent 1) ++ "]"
 
 rowJ :: Row -> J
 rowJ r = JObj $ concat
   [ [ ("name",     JStr (rName r))
     , ("kind",     JStr (rKind r))
     , ("type",     JStr (rType r))
-      -- The ranking key; see the module header on why it is not IDF.
-    , ("coverage", JNum (pct (rCoverage r)))
     , ("bodySize", JNum (rBodySize r))
     , ("source",   maybe JNull JStr (rSource r))
     ]
+  , [ ("coverage",  JNum (pct cv))   | Just cv <- [rCoverage r] ]
   , [ ("range",     JStr (rRange r)) | not (null (rRange r)) ]
   , [ ("wholeType", JBool True)      | rWhole r    ]
   , [ ("external",  JBool True)      | rExternal r ]
+  , [ ("with",  JArr (map JStr (rSubst r)))    | not (null (rSubst r))    ]
+  , [ ("needs", JArr (map JStr (rResidual r))) | not (null (rResidual r)) ]
   ]
