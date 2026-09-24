@@ -395,6 +395,8 @@ data WarningName
   | DuplicateDefinitions_
   -- Type search (--search-type)
   | TypeSearchHits_
+  -- Wide sections (--warn-wide-sections)
+  | WideSection_
   deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 instance NFData WarningName
@@ -645,3 +647,5 @@ warningNameDescription = \case
   DuplicateDefinitions_            -> "Counts of definitions sharing a name or an elaborated type, found by --duplicate-types."
   -- Type search
   TypeSearchHits_                  -> "How many definitions are an instance of, or have a conclusion fitting, the pattern given to --search-type."
+  -- Wide sections
+  WideSection_                     -> "Sections abstracting over many context variables, as reported by --warn-wide-sections."

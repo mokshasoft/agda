@@ -18,12 +18,12 @@ Elaborated: P _12
   SearchTypeLimit.pa  [67%, whole type, body 0]
     : P a
     with _1 := a
-    test/Succeed/SearchTypeLimit.agda:11.3-5
+    SearchTypeLimit.agda:11.3-5
 
   SearchTypeLimit.pb  [67%, whole type, body 0]
     : P b
     with _1 := b
-    test/Succeed/SearchTypeLimit.agda:12.3-5
+    SearchTypeLimit.agda:12.3-5
 
 == CONCLUSION FITS THE PATTERN (instance-of) ==
 

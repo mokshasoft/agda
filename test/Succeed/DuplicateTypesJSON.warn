@@ -9,7 +9,7 @@
   },
   "note": "Duplication is frequently deliberate. Parallel families must both exist; a copy that lets one part of a development avoid importing another may be carrying an architectural invariant, and deleting it would be a regression; and a specialised route can be cheaper than the general lemma it is an instance of. Nothing in a type distinguishes those from a real duplicate. The body size is the elaborated size of each definition's proof term. Two definitions with the same type are still different propositions if one elaborates to ten times the term, and that -- not anything in the statement -- is what decides whether collapsing them is a win.",
   "sharingType": [
-    {"type": "Nat → Nat", "size": 2, "modules": ["DuplicateTypesJSON"], "members": [{"name": "DuplicateTypesJSON.plusOne", "kind": "function", "bodySize": 2, "source": "test/Succeed/DuplicateTypesJSON.agda", "range": "test/Succeed/DuplicateTypesJSON.agda:9.1-8"}, {"name": "DuplicateTypesJSON.succOf", "kind": "function", "bodySize": 5, "source": "test/Succeed/DuplicateTypesJSON.agda", "range": "test/Succeed/DuplicateTypesJSON.agda:12.1-7"}]}
+    {"type": "Nat → Nat", "size": 2, "modules": ["DuplicateTypesJSON"], "members": [{"name": "DuplicateTypesJSON.plusOne", "kind": "function", "bodySize": 2, "source": DuplicateTypesJSON.agda", "range": DuplicateTypesJSON.agda:9.1-8"}, {"name": "DuplicateTypesJSON.succOf", "kind": "function", "bodySize": 5, "source": DuplicateTypesJSON.agda", "range": DuplicateTypesJSON.agda:12.1-7"}]}
   ],
   "sharingName": []
 }

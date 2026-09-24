@@ -707,6 +707,7 @@ defaultOptions = Options
   , optSearchFormat          = ReportText
   , optSearchLimit           = 40
   , optSearchUnanchored      = False
+  , optWarnSectionWidth      = Nothing
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1237,6 +1238,12 @@ searchFormatFlag s o = do
   fmt <- reportFormat "--search-format" s
   return $ o { optSearchFormat = fmt }
 
+warnWideSectionsFlag :: String -> Flag CommandLineOptions
+warnWideSectionsFlag s o = case reads s of
+  [(n, "")] | n >= 0 -> return $ o { optWarnSectionWidth = Just n }
+  _ -> throwError $
+    "--warn-wide-sections expects a non-negative number, got: " ++ s
+
 searchUnanchoredFlag :: Flag CommandLineOptions
 searchUnanchoredFlag o = return $ o { optSearchUnanchored = True }
 
@@ -1497,6 +1504,14 @@ standardOptions =
     , Option []     ["search-limit"] (ReqArg searchLimitFlag "N")
                     ("list at most N hits in EACH of the two sections, 0 for all\n" ++
                      "(default: 40). The reported totals are never truncated.")
+    , Option []     ["warn-wide-sections"] (ReqArg warnWideSectionsFlag "N")
+                    ("warn about each section that abstracts over N or more context\n" ++
+                     "variables. A section is a module, so this covers where-blocks and\n" ++
+                     "module applications, which are how definitions silently acquire a\n" ++
+                     "wide ambient context. A module application also reports how many\n" ++
+                     "definitions it copied: that many, times this width, is the real\n" ++
+                     "size of a one-line `module M = N ...`. A section of width zero is\n" ++
+                     "never reported: it abstracts over nothing.")
     , Option []     ["search-unanchored"] (NoArg searchUnanchoredFlag)
                     ("in the instance-of section of --search-type, also report definitions\n" ++
                      "whose conclusion is a bare variable. Such a definition fits every\n" ++

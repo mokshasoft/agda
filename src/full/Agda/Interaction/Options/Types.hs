@@ -118,6 +118,9 @@ data CommandLineOptions = Options
       -- ^ Output format for the search report (@--search-format=json|text@).
   , optSearchLimit           :: Int
       -- ^ How many hits to list (@--search-limit=N@); @0@ for all.
+  , optWarnSectionWidth      :: Maybe Int
+      -- ^ Warn about sections abstracting over at least this many context
+      --   variables (@--warn-wide-sections=N@).
   , optSearchUnanchored      :: Bool
       -- ^ Let a candidate's telescope variable stand at the /head/ of an
       --   @instance-of@ match (@--search-unanchored@).  Strictly more

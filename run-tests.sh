@@ -11,7 +11,7 @@ run_succeed() {
   rm -rf $dir/_build $dir/*/_build 2>/dev/null
   local got
   got=$($AGDA -v0 -i$dir -itest/ -vimpossible:10 -vwarning:1 --no-libraries \
-          $(cat $dir/$t.flags) $dir/$t.agda 2>&1)
+          $(cat $dir/$t.flags) $dir/$t.agda 2>&1 | clean)
   compare "$dir/$t.warn" "$got" "$t"
 }
 run_fail() {
@@ -19,7 +19,7 @@ run_fail() {
   rm -rf $dir/_build 2>/dev/null
   local got
   got=$($AGDA -v0 -i$dir -itest/ -vimpossible:10 -vwarning:1 --no-libraries \
-          $(cat $dir/$t.flags) $dir/$t.agda 2>&1 | sed -n '/error:/,$p')
+          $(cat $dir/$t.flags) $dir/$t.agda 2>&1 | clean | sed -n '/error:/,$p')
   compare "$dir/$t.err" "$got" "$t"
 }
 # Bad option values are rejected during option parsing, before any type
@@ -31,8 +31,20 @@ run_optfail() {
   rm -rf $dir/_build 2>/dev/null
   local got
   got=$($AGDA -v0 -i$dir -itest/ --no-libraries $flags \
-          $dir/OptionErrorDummy.agda 2>&1)
+          $dir/OptionErrorDummy.agda 2>&1 | clean)
   compare "$dir/$t.opterr" "$got" "$t"
+}
+
+# Mirror test/Utils.hs `cleanOutput'`: the real harness rewrites machine- and
+# version-specific paths out of Agda's output before comparing it against a
+# golden. Without this a golden embeds the absolute path of whoever generated
+# it and fails for everyone else.
+clean() {
+  sed -e 's|[^ (]*test/Fail/||g' \
+      -e 's|[^ (]*test/Succeed/||g' \
+      -e 's|[^ (]*test/Common/||g' \
+      -e 's|[^ (]*lib/prim|agda-default-include-path|g' \
+      -e 's|Agda-[0-9][.0-9]*|\xc2\xabAgda-package\xc2\xbb|g'
 }
 
 compare() {
@@ -51,7 +63,7 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          DuplicateTypesJSON DuplicateTypesClean SearchTypeBasic \
          SearchTypeInstance SearchTypePrefix SearchTypeRanking \
          SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff \
-         SearchTypeHigherOrder SearchTypeLimit; do
+         SearchTypeHigherOrder SearchTypeLimit WideSections; do
   run_succeed $t
 done
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done

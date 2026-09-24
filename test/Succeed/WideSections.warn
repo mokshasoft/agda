@@ -1,0 +1,49 @@
+WideSections.agda:20.1-23.10: warning: -W[no]WideSection
+Section Inner abstracts over 3 context variables
+
+WideSections.agda:26.1-31.12: warning: -W[no]WideSection
+Section _ abstracts over 3 context variables
+when checking that the clause
+f x y z = g
+  where
+    module M = Inner x y z
+    mutual
+      syntax g ...
+      postulate g : A
+      g = M.p
+has type A → A → A → A
+
+WideSections.agda:28.5-27: warning: -W[no]WideSection
+Module application M = Inner copies 2 definitions into a context of
+3 variables
+when checking the module application module M = Inner x y z
+
+WideSections.agda:28.5-27: warning: -W[no]WideSection
+Section M abstracts over 3 context variables
+when checking the module application module M = Inner x y z
+
+———— All done; warnings encountered ————————————————————————
+
+WideSections.agda:20.1-23.10: warning: -W[no]WideSection
+Section Inner abstracts over 3 context variables
+
+WideSections.agda:26.1-31.12: warning: -W[no]WideSection
+Section _ abstracts over 3 context variables
+when checking that the clause
+f x y z = g
+  where
+    module M = Inner x y z
+    mutual
+      syntax g ...
+      postulate g : A
+      g = M.p
+has type A → A → A → A
+
+WideSections.agda:28.5-27: warning: -W[no]WideSection
+Module application M = Inner copies 2 definitions into a context of
+3 variables
+when checking the module application module M = Inner x y z
+
+WideSections.agda:28.5-27: warning: -W[no]WideSection
+Section M abstracts over 3 context variables
+when checking the module application module M = Inner x y z

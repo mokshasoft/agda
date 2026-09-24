@@ -19,8 +19,8 @@ Defined in more than one module: 0 groups, 0 definitions
 == SHARING AN ELABORATED TYPE ==
 
   Nat → Nat
-    DuplicateTypesBasic.plusOne  function      body 2    test/Succeed/DuplicateTypesBasic.agda:13.1-8
-    DuplicateTypesBasic.succOf   function      body 5    test/Succeed/DuplicateTypesBasic.agda:16.1-7
+    DuplicateTypesBasic.plusOne  function      body 2    DuplicateTypesBasic.agda:13.1-8
+    DuplicateTypesBasic.succOf   function      body 5    DuplicateTypesBasic.agda:16.1-7
 
 == DEFINED IN MORE THAN ONE MODULE ==
 

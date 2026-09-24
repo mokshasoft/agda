@@ -612,6 +612,9 @@ warningHighlighting' b w = case tcWarning w of
   -- Type search (--search-type)
   TypeSearchHits{} -> mempty  -- counts only; the hits are in many files
 
+  -- Wide sections (--warn-wide-sections)
+  WideSection{} -> mempty  -- the range on the warning already points at it
+
 recordFieldWarningHighlighting ::
   RecordFieldWarning -> HighlightingInfoBuilder
 recordFieldWarningHighlighting = \case

@@ -146,6 +146,7 @@ instance EmbPrj Warning where
     ReachableTrustBase a                        -> icodeN 78 ReachableTrustBase a
     DuplicateDefinitions a                      -> icodeN 79 DuplicateDefinitions a
     TypeSearchHits a                            -> icodeN 80 TypeSearchHits a
+    WideSection a                               -> icodeN 81 WideSection a
 
   value = vcase $ \ case
     [0, a, b]            -> valuN UnreachableClauses a b
@@ -230,6 +231,7 @@ instance EmbPrj Warning where
     [78, a]              -> valuN ReachableTrustBase a
     [79, a]              -> valuN DuplicateDefinitions a
     [80, a]              -> valuN TypeSearchHits a
+    [81, a]              -> valuN WideSection a
     _ -> malformed
 
 instance EmbPrj UselessPublicReason
@@ -289,6 +291,10 @@ instance EmbPrj TrustBaseItem where
 instance EmbPrj DuplicateReport where
   icod_ (DuplicateReport a b c d e) = icodeN' DuplicateReport a b c d e
   value = valueN DuplicateReport
+
+instance EmbPrj SectionWidth where
+  icod_ (SectionWidth a b c) = icodeN' SectionWidth a b c
+  value = valueN SectionWidth
 
 instance EmbPrj TypeSearchReport where
   icod_ (TypeSearchReport a b c d e f) = icodeN' TypeSearchReport a b c d e f

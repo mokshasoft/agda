@@ -20,17 +20,17 @@ Elaborated: step _43 (step _44 _45) ≡ _46
   SearchTypeRanking.tight  [44%, body 0]
     : (a b c : Tm) → step a (step b c) ≡ step a c
     with _1 := a, _2 := b, _3 := c, _4 := step a c
-    test/Succeed/SearchTypeRanking.agda:29.3-8
+    SearchTypeRanking.agda:29.3-8
 
   SearchTypeRanking.middle  [33%, body 0]
     : (a b c : Tm) → a ≡ a → step a (step b c) ≡ step a c
     with _1 := a, _2 := b, _3 := c, _4 := step a c
-    test/Succeed/SearchTypeRanking.agda:30.3-9
+    SearchTypeRanking.agda:30.3-9
 
   SearchTypeRanking.buried  [22%, body 0]
     : (a b c : Tm) → a ≡ a → b ≡ b → c ≡ c → step a (step b c) ≡ step a c
     with _1 := a, _2 := b, _3 := c, _4 := step a c
-    test/Succeed/SearchTypeRanking.agda:31.3-9
+    SearchTypeRanking.agda:31.3-9
 
 == CONCLUSION FITS THE PATTERN (instance-of) ==
 

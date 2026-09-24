@@ -24,7 +24,7 @@ Elaborated: P t0
   SearchTypeUnanchoredOff.fits  [body 0]
     : (x : Tm) → P x
     with x := t0
-    test/Succeed/SearchTypeUnanchoredOff.agda:10.3-7
+    SearchTypeUnanchoredOff.agda:10.3-7
 
 
 ———— All done; warnings encountered ————————————————————————

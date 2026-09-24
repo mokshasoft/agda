@@ -17,11 +17,11 @@ Elaborated: Tm → Tm
 
   SearchTypePrefix.twice  [100%, whole type, body 0]
     : Tm → Tm
-    test/Succeed/SearchTypePrefix.agda:14.3-8
+    SearchTypePrefix.agda:14.3-8
 
   SearchTypePrefix.const  [60%, body 0]
     : Tm → Tm → Tm
-    test/Succeed/SearchTypePrefix.agda:15.3-8
+    SearchTypePrefix.agda:15.3-8
 
 == CONCLUSION FITS THE PATTERN (instance-of) ==
 
@@ -33,12 +33,12 @@ Elaborated: Tm → Tm
 
   SearchTypePrefix.twice  [body 0]
     : Tm → Tm
-    test/Succeed/SearchTypePrefix.agda:14.3-8
+    SearchTypePrefix.agda:14.3-8
 
   SearchTypePrefix.const  [body 0]
     : Tm → Tm → Tm
     needs (_ : Tm)
-    test/Succeed/SearchTypePrefix.agda:15.3-8
+    SearchTypePrefix.agda:15.3-8
 
 
 ———— All done; warnings encountered ————————————————————————

@@ -19,15 +19,15 @@ Defined in more than one module: 1 group, 2 definitions
 == SHARING AN ELABORATED TYPE ==
 
   Nat → Nat
-    DuplicateTypesModules.Helper.twin   function      body 2    test/Succeed/DuplicateTypesModules/Helper.agda
-    DuplicateTypesModules.alsoNatToNat  function      body 1    test/Succeed/DuplicateTypesModules.agda:18.1-13
-    DuplicateTypesModules.twin          function      body 2    test/Succeed/DuplicateTypesModules.agda:15.1-5
+    DuplicateTypesModules.Helper.twin   function      body 2    DuplicateTypesModules/Helper.agda
+    DuplicateTypesModules.alsoNatToNat  function      body 1    DuplicateTypesModules.agda:18.1-13
+    DuplicateTypesModules.twin          function      body 2    DuplicateTypesModules.agda:15.1-5
 
 == DEFINED IN MORE THAN ONE MODULE ==
 
   twin  (DuplicateTypesModules, DuplicateTypesModules.Helper)
-    DuplicateTypesModules.Helper.twin  function      body 2    test/Succeed/DuplicateTypesModules/Helper.agda
-    DuplicateTypesModules.twin         function      body 2    test/Succeed/DuplicateTypesModules.agda:15.1-5
+    DuplicateTypesModules.Helper.twin  function      body 2    DuplicateTypesModules/Helper.agda
+    DuplicateTypesModules.twin         function      body 2    DuplicateTypesModules.agda:15.1-5
 
 
 ———— All done; warnings encountered ————————————————————————

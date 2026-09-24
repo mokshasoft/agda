@@ -18,12 +18,12 @@ Elaborated: Wrap (Wrap _A_15)
   SearchTypeBasic.alsoNested  [80%, whole type, body 3]
     : Wrap (Wrap Bool)
     with _1 := Bool
-    test/Succeed/SearchTypeBasic.agda:23.1-11
+    SearchTypeBasic.agda:23.1-11
 
   SearchTypeBasic.nested  [80%, whole type, body 3]
     : Wrap (Wrap Nat)
     with _1 := Nat
-    test/Succeed/SearchTypeBasic.agda:20.1-7
+    SearchTypeBasic.agda:20.1-7
 
 == CONCLUSION FITS THE PATTERN (instance-of) ==
 
@@ -37,7 +37,7 @@ Elaborated: Wrap (Wrap _A_15)
     : {A : Set} → A → Wrap A
     with A := Wrap _A_15
     needs (_ : A)
-    test/Succeed/SearchTypeBasic.agda:18.3-7
+    SearchTypeBasic.agda:18.3-7
 
 
 ———— All done; warnings encountered ————————————————————————

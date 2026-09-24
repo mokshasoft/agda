@@ -24,18 +24,18 @@ Elaborated: P t0
   SearchTypeUnanchored.fits  [body 0]
     : (x : Tm) → P x
     with x := t0
-    test/Succeed/SearchTypeUnanchored.agda:17.3-7
+    SearchTypeUnanchored.agda:17.3-7
 
   SearchTypeUnanchored.anything  [body 0]
     : (A : Set) → A
     with A := P t0
-    test/Succeed/SearchTypeUnanchored.agda:18.3-11
+    SearchTypeUnanchored.agda:18.3-11
 
   Agda.Primitive.Cubical.primHComp  (external)  [body 0]
     : {ℓ : Agda.Primitive.Level} {A : Set ℓ} {φ : Agda.Primitive.Cubical.I} → (Agda.Primitive.Cubical.I → Agda.Primitive.Cubical.Partial φ A) → A → A
     with A := P t0
     needs {ℓ : Agda.Primitive.Level}, {φ : Agda.Primitive.Cubical.I}, (u : Agda.Primitive.Cubical.I → Agda.Primitive.Cubical.Partial φ A), (a : A)
-    /home/whatever/.cabal/share/x86_64-linux-ghc-9.6.5/Agda-2.8.0/lib/prim/Agda/Primitive/Cubical.agda
+    agda-default-include-path/Agda/Primitive/Cubical.agda
 
 
 ———— All done; warnings encountered ————————————————————————

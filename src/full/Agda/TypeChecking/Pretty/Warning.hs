@@ -777,6 +777,31 @@ prettyWarning = \case
         tally n shown = show n ++ " definition" ++ (if n == 1 then "" else "s")
           ++ (if shown < n then " (top " ++ show shown ++ " listed)" else "")
 
+    -- The width is what every definition in the section carries.  For a
+    -- module application the interesting number is the product: a one-line
+    -- `module M = N ...` that copies 63 definitions over a 65-variable
+    -- context has written 63 definitions, each 65 binders deep, and says so
+    -- nowhere.
+    WideSection w -> case swCopied w of
+      -- A plain section: a module, or the module a `where` block becomes.
+      Nothing -> fsep $ concat
+        [ pwords "Section", [ prettyTCM (swModule w) ], pwords "abstracts over"
+        , [ pretty (swWidth w) ], pwords (vars (swWidth w))
+        ]
+      -- A module application.  'addSection' has already reported the width
+      -- for this module; the fact added here is the multiplier -- how many
+      -- definitions were copied into that context by one line of source.
+      Just (old, n) -> fsep $ concat
+        [ pwords "Module application", [ prettyTCM (swModule w), "=" ]
+        , [ prettyTCM old ], pwords "copies", [ pretty n ]
+        , pwords (singPlural' n "definition" "definitions")
+        , pwords "into a context of", [ pretty (swWidth w) ]
+        , pwords (singPlural' (swWidth w) "variable" "variables")
+        ]
+      where
+        vars k = singPlural' k "context variable" "context variables"
+        singPlural' k sg pl = if k == 1 then sg else pl
+
 instance PrettyTCM DataOrRecord_ where
   prettyTCM = \case
     IsData{}   -> "data"

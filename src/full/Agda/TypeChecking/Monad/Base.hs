@@ -4827,6 +4827,10 @@ data Warning
   -- Type search (--search-type)
   | TypeSearchHits TypeSearchReport
     -- ^ How many definitions have a type matching the search pattern.
+
+  -- Wide sections (--warn-wide-sections)
+  | WideSection SectionWidth
+    -- ^ A section abstracting over many context variables.
   deriving (Show, Generic)
 
 -- | One assumption reported by @--write-ast@.
@@ -4889,6 +4893,24 @@ data TypeSearchReport = TypeSearchReport
       -- ^ How many of those the report lists.
   , tsFile      :: FilePath
       -- ^ Where the report was written; @-@ for standard output.
+  }
+  deriving (Show, Generic)
+
+-- | A section and the ambient context it abstracts over.
+--
+--   A section is a module, so this covers a @where@ block and a module
+--   application alike -- both lift their contents out over the enclosing
+--   context, and neither says so in the source text.  The width is what every
+--   definition in the section carries; for a module application, multiply it
+--   by 'swCopied' to get the real size of the one line that wrote it.
+data SectionWidth = SectionWidth
+  { swModule :: ModuleName
+      -- ^ The section.
+  , swWidth  :: Int
+      -- ^ Context variables abstracted over.
+  , swCopied :: Maybe (ModuleName, Int)
+      -- ^ For a module application: the module applied, and how many
+      --   definitions the application copied.
   }
   deriving (Show, Generic)
 
@@ -5032,6 +5054,9 @@ warningName = \case
 
   -- Type search
   TypeSearchHits{} -> TypeSearchHits_
+
+  -- Wide sections
+  WideSection{} -> WideSection_
 
 illegalRewriteWarningName :: IllegalRewriteRuleReason -> WarningName
 illegalRewriteWarningName = \case
@@ -6824,6 +6849,7 @@ instance NFData Candidate
 instance NFData TrustBaseItem
 instance NFData DuplicateReport
 instance NFData TypeSearchReport
+instance NFData SectionWidth
 instance NFData Warning
 instance NFData RecordFieldWarning
 instance NFData TCWarning
