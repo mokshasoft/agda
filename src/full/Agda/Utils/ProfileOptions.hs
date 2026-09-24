@@ -40,6 +40,7 @@ data ProfileOption = Internal     -- ^ Measure time taken by various parts of th
                    | Interactive  -- ^ Measure time of interactive commands
                    | Conversion   -- ^ Collect statistics about conversion checking
                    | Instances    -- ^ Collect statistics about instance search
+                   | Reduction    -- ^ Count unfoldings per definition, and the size they unfold to
   deriving (Show, Eq, Ord, Enum, Bounded, Generic)
 
 instance NFData ProfileOption

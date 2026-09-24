@@ -39,6 +39,7 @@ import Agda.TypeChecking.Free
 import Agda.TypeChecking.Datatypes (getConType, getFullyAppliedConType)
 import Agda.TypeChecking.Records
 import Agda.TypeChecking.Pretty
+import Agda.TypeChecking.ProfileCounters (tickConversion)
 import Agda.TypeChecking.Injectivity
 import Agda.TypeChecking.Polarity
 import Agda.TypeChecking.SizedTypes
@@ -157,6 +158,15 @@ compareTerm cmp a u v = compareAs cmp (AsTermsOf a) u v
 
 
 {-# SPECIALIZE compareAs :: Comparison -> CompareAs -> Term -> Term -> TCM ()  #-}
+-- | The definitions a conversion check is /about/: the head symbol of each
+--   side, when it has one.  A neutral term headed by a variable, a sort or a
+--   literal is nobody's fault and is not attributed.
+conversionHeads :: Term -> [QName]
+conversionHeads = \case
+  Def q _   -> [q]
+  Con c _ _ -> [conName c]
+  _         -> []
+
 -- | Type directed equality on terms or types.
 compareAs :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
   -- If one term is a meta, try to instantiate right away. This avoids unnecessary unfolding.
@@ -167,7 +177,11 @@ compareAs cmp a u v = do
     , nest 2 $ prettyTCM u <+> prettyTCM cmp <+> prettyTCM v
     , nest 2 $ prettyTCM a
     ]
-  whenProfile Profile.Conversion $ tick "compare"
+  whenProfile Profile.Conversion $ do
+    tick "compare"
+    -- The aggregate tick above says conversion is hot; these say whose.  Both
+    -- heads are counted: a comparison is work done on behalf of each.
+    mapM_ tickConversion $ conversionHeads u ++ conversionHeads v
 
   -- OLD CODE, traverses the *full* terms u v at each step, even if they
   -- are different somewhere.  Leads to infeasibility in issue 854.

@@ -7,7 +7,7 @@ module Agda.Main where
 import Prelude hiding (null)
 
 import qualified Control.Exception as E
-import Control.Monad          ( void )
+import Control.Monad          ( forM_, void )
 import Control.Monad.Except   ( MonadError(..), ExceptT(..), runExceptT )
 import Control.Monad.IO.Class ( MonadIO(..) )
 
@@ -37,6 +37,10 @@ import qualified Agda.Interaction.Imports as Imp
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Errors
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
+import qualified Agda.TypeChecking.ProfileCounters as PC
+import qualified Agda.Utils.ProfileOptions as Profile
+import qualified Data.HashMap.Strict as HMap
+import qualified Agda.Utils.List1 as List1
 import Agda.TypeChecking.Errors
 import Agda.TypeChecking.Warnings
 import Agda.TypeChecking.Pretty
@@ -279,7 +283,36 @@ runAgdaWithOptions interactor progName opts = do
 
             -- Print accumulated statistics.
             printStatistics Nothing =<< useTC lensAccumStatistics
+
+            -- Print the per-definition counters.  These live outside the
+            -- statistics map on purpose; see "Agda.TypeChecking.ProfileCounters".
+            printProfileCounters
   where
+    -- | Per-definition counters, sorted descending and truncated.
+    --
+    --   One section per counter, and each is printed only when the profile
+    --   option that feeds it is on -- so asking for @--profile=reduction@ does
+    --   not also print conversion numbers that were never collected, which
+    --   would read as zeros rather than as absent.
+    printProfileCounters :: TCM ()
+    printProfileCounters = do
+      cs <- liftIO PC.getCounters
+      section Profile.Reduction   "unfoldings"          (PC.cUnfold cs)
+      section Profile.Reduction   "largest normal form" (PC.cMaxSize cs)
+      section Profile.Conversion  "conversion checks"   (PC.cConv cs)
+      section Profile.Constraints "constraint wakeups"  (PC.cWakeup cs)
+      section Profile.Serialize   "serialised size"     (PC.cSerSize cs)
+      where
+        section opt title m = whenProfile opt $
+          List1.unlessNull (PC.topBy 25 m) $ \ rows -> do
+            alwaysReportSLn "" 1 $ "\n" ++ title ++ " (top " ++
+              show (length (List1.toList rows)) ++ " of " ++
+              show (HMap.size m) ++ ")"
+            forM_ (List1.toList rows) $ \ (q, n) ->
+              alwaysReportSLn "" 1 $
+                "  " ++ pad 10 (showThousandSep n) ++ "  " ++ P.prettyShow q
+        pad k str = replicate (max 0 (k - length str)) ' ' ++ str
+
     -- Options are fleshed out here so that (most) errors like
     -- "bad library path" are validated within the interactor,
     -- so that they are reported with the appropriate protocol/formatting.
