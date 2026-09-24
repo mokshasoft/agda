@@ -297,6 +297,18 @@ runAgdaWithOptions interactor progName opts = do
     printProfileCounters :: TCM ()
     printProfileCounters = do
       cs <- liftIO PC.getCounters
+      -- A silent zero here would be the worst outcome: Agda dispatches to the
+      -- fast evaluator by default (Reduce.hs, `ifM shouldTryFastReduce`),
+      -- which does not go through unfoldDefinitionStep and so is not counted.
+      -- Saying so beats reporting a number that looks complete and is not.
+      whenProfile Profile.Reduction $ whenM (optFastReduce <$> pragmaOptions) $
+        alwaysReportSLn "" 1 $ unlines
+          [ ""
+          , "NOTE: the unfolding and normal-form counters below exclude the fast"
+          , "      evaluator, which handles most reduction by default and does not"
+          , "      go through the counted path. Re-run with --no-fast-reduce for"
+          , "      complete numbers; it is slower, but the counts are the point."
+          ]
       section Profile.Reduction   "unfoldings"          (PC.cUnfold cs)
       section Profile.Reduction   "largest normal form" (PC.cMaxSize cs)
       section Profile.Conversion  "conversion checks"   (PC.cConv cs)

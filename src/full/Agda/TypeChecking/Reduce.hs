@@ -47,6 +47,8 @@ import Agda.Syntax.Literal
 
 import {-# SOURCE #-} Agda.TypeChecking.Irrelevance (isPropM)
 import Agda.TypeChecking.Monad hiding ( enterClosure, constructorForm )
+import Agda.TypeChecking.ProfileCounters (tickUnfold)
+import qualified Agda.Utils.ProfileOptions as Profile
 import Agda.TypeChecking.Substitute
 import Agda.TypeChecking.CompiledClause
 import Agda.TypeChecking.EtaContract
@@ -653,6 +655,12 @@ unfoldDefinition' keepGoing v0 f es = do
 unfoldDefinitionStep :: Term -> QName -> Elims -> ReduceM (Reduced (Blocked Term) Term)
 unfoldDefinitionStep v0 f es =
   {-# SCC "reduceDef" #-} do
+  -- §4.1.  Counted here, at the entry, so the number is "times reduction
+  -- asked to unfold f" -- a step that turns out to be blocked, disallowed or
+  -- already a value still counts, because the work of deciding that was done
+  -- on f's behalf.  Counting only successful unfoldings would need a tick on
+  -- every one of the branches below and would silently miss any added later.
+  whenProfile Profile.Reduction $ tickUnfold f
   traceSDoc "tc.reduce" 90 ("unfoldDefinitionStep v0" <+> pretty v0) $ do
   info <- getConstInfo f
   rewr <- instantiateRewriteRules =<< getRewriteRulesFor f
