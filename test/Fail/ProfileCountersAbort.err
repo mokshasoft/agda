@@ -1,0 +1,13 @@
+Counts of forced evaluations, per definition, most counted first.
+INCOMPLETE: the run stopped (type error).  Every count is what had been counted when it stopped.
+
+unfoldings (6)
+         146  ProfileCountersAbort.Nat
+          20  ProfileCountersAbort._≡_
+           6  ProfileCountersAbort.Nat.suc
+           6  ProfileCountersAbort.loop
+           4  ProfileCountersAbort.Nat.zero
+           1  ProfileCountersAbort.five
+ProfileCountersAbort.agda:24.7-10: error: [UnequalTerms]
+Set₁ !=< Nat
+when checking that the expression Set has type Nat

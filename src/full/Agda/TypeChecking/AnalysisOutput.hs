@@ -13,6 +13,10 @@ module Agda.TypeChecking.AnalysisOutput
   ( -- * Output sinks
     Sink
   , withOutputSink
+    -- * Reports taken when a run stops
+  , Completeness (..)
+  , describeStop
+  , stateOfErr
     -- * Naming
   , defKind
     -- * Paths and ranges
@@ -46,9 +50,8 @@ import System.IO
   ( BufferMode (BlockBuffering), IOMode (WriteMode)
   , hClose, hPutStr, hSetBuffering, hSetEncoding, openFile, stdout, utf8 )
 
-import Agda.Syntax.Abstract.Name (QName)
 import Agda.Syntax.Common.Pretty (prettyShow)
-import Agda.Syntax.Position (getRange, rangeFile, rangeFilePath)
+import Agda.Syntax.Position (HasRange, getRange, rangeFile, rangeFilePath)
 
 import Agda.TypeChecking.DeadCode (pathInProject)
 import Agda.TypeChecking.Monad
@@ -84,6 +87,38 @@ withOutputSink fp  k = do
   pure r
 
 ---------------------------------------------------------------------------
+-- * Reports taken when a run stops
+---------------------------------------------------------------------------
+
+-- | Whether the run finished before a report was taken.
+--
+--   A report is most needed for a run that does not finish -- a module that
+--   runs out of heap, or is interrupted after an hour -- so the measuring
+--   reports are also written when a run stops, and say so.
+data Completeness
+  = Complete
+  | Incomplete String
+      -- ^ The run stopped; says what stopped it.
+
+-- | The state an error was raised in, for the errors that carry one.
+--
+--   By the time an error reaches a handler the live state has usually been
+--   rolled back ('catchError' restores it), so this copy is the one that
+--   still holds what was done before the error.
+stateOfErr :: TCErr -> Maybe TCState
+stateOfErr = \case
+  TypeError{ tcErrState = s } -> Just s
+  IOException (Just s) _ _    -> Just s
+  _                           -> Nothing
+
+-- | What stopped a run, as a report states it.
+describeStop :: TCErr -> String
+describeStop = \case
+  TypeError{}   -> "type error"
+  IOException{} -> "IO error"
+  _             -> "error"
+
+---------------------------------------------------------------------------
 -- * Naming
 ---------------------------------------------------------------------------
 
@@ -116,8 +151,9 @@ relativeTo projectDir p
 --
 --   A range on an imported name can point at the /importing/ file (see
 --   'Agda.TypeChecking.DeadCode.moduleFileTable'), so a range is reported
---   only when it agrees with the module-resolved source file.
-trustedRange :: FilePath -> Maybe FilePath -> QName -> String
+--   only when it agrees with the module-resolved source file.  The same
+--   holds for the name of a module.
+trustedRange :: HasRange a => FilePath -> Maybe FilePath -> a -> String
 trustedRange projectDir msrc x = case rangeFile (getRange x) of
   Strict.Nothing -> ""
   Strict.Just rf

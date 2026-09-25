@@ -810,6 +810,7 @@ library
       Agda.TypeChecking.Positivity
       Agda.TypeChecking.Positivity.Occurrence
       Agda.TypeChecking.ProfileCounters
+      Agda.TypeChecking.ProfileReport
       Agda.TypeChecking.Pretty
       Agda.TypeChecking.Pretty.Call
       Agda.TypeChecking.Pretty.Constraint
@@ -874,6 +875,7 @@ library
       Agda.TypeChecking.Unquote
       Agda.TypeChecking.Warnings
       Agda.TypeChecking.With
+      Agda.TypeChecking.WideSections
       Agda.Utils.AffineHole
       Agda.Utils.Applicative
       Agda.Utils.AssocList

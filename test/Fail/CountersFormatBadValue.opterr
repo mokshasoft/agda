@@ -1,0 +1,2 @@
+Error: unknown argument to --counters-format: csv (expected 'json' or 'text')
+Run 'agda --help' for help on command line options.

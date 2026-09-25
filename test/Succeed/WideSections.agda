@@ -1,4 +1,4 @@
--- --warn-wide-sections reports how much ambient context a section abstracts
+-- --wide-sections reports how much ambient context a section abstracts
 -- over.  A section is a module, so this covers both shapes that silently
 -- widen a definition's context:
 --

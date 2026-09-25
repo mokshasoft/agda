@@ -1,0 +1,20 @@
+{
+  "complete": true,
+  "note": "Counts of forced evaluations, per definition, most counted first.",
+  "counters": {
+    "unfoldings": [
+      {"name": "ProfileCountersJSON.Nat", "count": 141},
+      {"name": "ProfileCountersJSON._≡_", "count": 20},
+      {"name": "ProfileCountersJSON.Nat.suc", "count": 6},
+      {"name": "ProfileCountersJSON.loop", "count": 6},
+      {"name": "ProfileCountersJSON.Nat.zero", "count": 4},
+      {"name": "ProfileCountersJSON.five", "count": 1}
+    ],
+    "conversionChecks": [
+      {"name": "ProfileCountersJSON.Nat", "count": 28},
+      {"name": "ProfileCountersJSON.loop", "count": 3},
+      {"name": "ProfileCountersJSON._≡_", "count": 2},
+      {"name": "ProfileCountersJSON.Nat.zero", "count": 1}
+    ]
+  }
+}

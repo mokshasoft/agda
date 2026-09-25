@@ -1,0 +1,13 @@
+Wide sections (width >= 1): 3
+  cost = width x definitions: binders the elaborator wrote that the
+  source does not show.  A count, not a time.
+  INCOMPLETE: checking stopped (type error).  Every number listed
+  is exact, but whatever had not been checked yet is missing, including
+  the rest of the module that stopped.
+cost    width  defs  copies  section
+6       3      2     -       WideSectionsAbort.Inner  WideSectionsAbort.agda:13.8-13
+6       3      2     2       WideSectionsAbort._.M = WideSectionsAbort.Inner  WideSectionsAbort.agda:20.12-13
+3       3      1     -       WideSectionsAbort._  WideSectionsAbort.agda:22.5-6 (first definition)
+WideSectionsAbort.agda:26.7-10: error: [UnequalTerms]
+Set₁ !=< A
+when checking that the expression Set has type A

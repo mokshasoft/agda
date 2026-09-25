@@ -22,6 +22,17 @@ run_fail() {
           $(cat $dir/$t.flags) $dir/$t.agda 2>&1 | clean | sed -n '/error:/,$p')
   compare "$dir/$t.err" "$got" "$t"
 }
+# A failing module whose golden is the WHOLE output, not just the error:
+# for --wide-sections the incomplete report printed before the error is the
+# point of the test.
+run_fail_whole() {
+  local t=$1 dir=test/Fail
+  rm -rf $dir/_build 2>/dev/null
+  local got
+  got=$($AGDA -v0 -i$dir -itest/ -vimpossible:10 -vwarning:1 --no-libraries \
+          $(cat $dir/$t.flags) $dir/$t.agda 2>&1 | clean)
+  compare "$dir/$t.err" "$got" "$t"
+}
 # Bad option values are rejected during option parsing, before any type
 # checking, so they print `Error: ...` rather than an `error: [Code]` block
 # and run_fail's extraction finds nothing.  They get their own category,
@@ -63,13 +74,19 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          DuplicateTypesJSON DuplicateTypesClean SearchTypeBasic \
          SearchTypeInstance SearchTypePrefix SearchTypeRanking \
          SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff \
-         SearchTypeHigherOrder SearchTypeLimit WideSections; do
+         SearchTypeHigherOrder SearchTypeLimit WideSections WideSectionsJSON \
+         ProfileCountersJSON ProfileCountersText; do
   run_succeed $t
 done
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done
+run_fail_whole WideSectionsAbort
+run_fail_whole ProfileCountersAbort
 run_optfail DupFormatBadValue    "--duplicate-types --dup-format=bogus"
 run_optfail SearchFormatBadValue "--search-type=Tm --search-format=xml"
 run_optfail SearchLimitBadValue  "--search-type=Tm --search-limit=-3"
+run_optfail WideFormatBadValue   "--wide-sections=1 --wide-format=xml"
+run_optfail WideSectionsBadValue "--wide-sections=many"
+run_optfail CountersFormatBadValue "--profile=reduction --counters-format=csv"
 rm -rf test/Succeed/_build test/Succeed/*/_build test/Fail/_build 2>/dev/null
 echo "======== $pass passed, $fail failed ========"
 [ $fail -eq 0 ]

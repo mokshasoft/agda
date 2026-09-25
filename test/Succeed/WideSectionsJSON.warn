@@ -1,0 +1,12 @@
+{
+  "threshold": 2,
+  "complete": true,
+  "count": 4,
+  "note": "cost = width x definitions: binders the elaborator wrote that the source does not show. A count, not a time.",
+  "sections": [
+    {"section": "WideSectionsJSON._._.M", "cost": 9, "width": 3, "definitions": 3, "copies": 3, "copiedFrom": "WideSectionsJSON.Inner", "source": WideSectionsJSON.agda", "range": WideSectionsJSON.agda:20.16-17", "rangeIsFirstDefinition": false},
+    {"section": "WideSectionsJSON.Inner", "cost": 6, "width": 2, "definitions": 3, "copies": 0, "source": WideSectionsJSON.agda", "range": WideSectionsJSON.agda:10.8-13", "rangeIsFirstDefinition": false},
+    {"section": "WideSectionsJSON._", "cost": 3, "width": 3, "definitions": 1, "copies": 0, "source": WideSectionsJSON.agda", "range": WideSectionsJSON.agda:17.5-6", "rangeIsFirstDefinition": true},
+    {"section": "WideSectionsJSON._._", "cost": 3, "width": 3, "definitions": 1, "copies": 0, "source": WideSectionsJSON.agda", "range": WideSectionsJSON.agda:22.9-10", "rangeIsFirstDefinition": true}
+  ]
+}

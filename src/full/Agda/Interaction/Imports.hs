@@ -88,6 +88,8 @@ import Agda.TypeChecking.ASTDump (writeASTDump)
 import Agda.TypeChecking.DeadCode
 import Agda.TypeChecking.DuplicateTypes (findDuplicates)
 import Agda.TypeChecking.TypeSearch (searchType)
+import Agda.TypeChecking.AnalysisOutput (Completeness (Complete))
+import Agda.TypeChecking.WideSections (reportWideSections, withWideSectionsOnAbort)
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
 import Agda.TheTypeChecker
@@ -590,6 +592,7 @@ analysesRequested = \case
       , isJust (optWriteAST opts)
       , optDuplicateTypes opts
       , isJust (optSearchType opts)
+      , isJust (optWideSections opts)
       ]
 
 -- | The whole-program analyses that run over the main module's signature:
@@ -620,6 +623,13 @@ signatureAnalyses src = do
       searchType projectDir (srcModuleName src) pat
         (optSearchFile opts) (optSearchFormat opts) (optSearchLimit opts)
         (not (optSearchUnanchored opts))
+
+    -- Read off the signature after checking, not raised as warnings during
+    -- it; see the module header of "Agda.TypeChecking.WideSections".  If
+    -- checking stops instead, 'createInterface' writes it from there.
+    whenJust (optWideSections opts) $ \ n ->
+      reportWideSections projectDir n (optWideFile opts) (optWideFormat opts)
+        Complete
   where
     entryPoint flag rootStr = lookupQNameByString rootStr >>= \case
       Just root -> pure root
@@ -1210,7 +1220,10 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
                    reportWarningsForModule mname $ tcWarnings classified
                    when (null (nonFatalErrors classified)) $ chaseMsg "Finished" mname Nothing)
 
+  -- Inside 'withMsgs', so the report is written before the stop is.
   withMsgs $
+    withWideSectionsOnAbort (isMain /= NotMainInterface)
+      (analysisProjectDir (takeDirectory fp)) $
     Bench.billTo [Bench.TopModule mname] $
     localTC (\ e -> e { envCurrentPath = Just sfi }) do
 

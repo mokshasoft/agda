@@ -118,9 +118,20 @@ data CommandLineOptions = Options
       -- ^ Output format for the search report (@--search-format=json|text@).
   , optSearchLimit           :: Int
       -- ^ How many hits to list (@--search-limit=N@); @0@ for all.
-  , optWarnSectionWidth      :: Maybe Int
-      -- ^ Warn about sections abstracting over at least this many context
-      --   variables (@--warn-wide-sections=N@).
+  , optWideSections          :: Maybe Int
+      -- ^ Report sections abstracting over at least this many context
+      --   variables (@--wide-sections=N@).
+  , optWideFile              :: FilePath
+      -- ^ Where to write the wide-sections report (@--wide-file@); @-@ for
+      --   stdout.
+  , optWideFormat            :: ReportFormat
+      -- ^ Output format for it (@--wide-format=json|text@).
+  , optCountersFile          :: FilePath
+      -- ^ Where to write the per-definition counters collected by
+      --   @--profile=reduction|conversion@
+      --   (@--counters-file@); @-@ for stdout.
+  , optCountersFormat        :: ReportFormat
+      -- ^ Output format for them (@--counters-format=json|text@).
   , optSearchUnanchored      :: Bool
       -- ^ Let a candidate's telescope variable stand at the /head/ of an
       --   @instance-of@ match (@--search-unanchored@).  Strictly more

@@ -1,0 +1,4 @@
+Counts of forced evaluations, per definition, most counted first.
+The unfolding counts exclude the fast evaluator, which handles most reduction by default and does not go through the counted path.  Re-run with --no-fast-reduce for complete numbers; it is slower, but the counts are the point.
+
+unfoldings (0)

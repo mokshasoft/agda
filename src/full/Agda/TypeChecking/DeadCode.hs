@@ -8,6 +8,7 @@ module Agda.TypeChecking.DeadCode
   , ModuleFileTable
   , moduleFileTable
   , sourceOfQName
+  , sourceOfModule
   , qnameInProject
   , pathInProject
   , allDefinitions
@@ -193,11 +194,15 @@ moduleFileTable = do
 
 -- | Source file of a name, resolved through its module.
 sourceOfQName :: ModuleFileTable -> QName -> Maybe FilePath
-sourceOfQName tbl qn = listToMaybe
+sourceOfQName tbl = sourceOfModule tbl . qnameModule
+
+-- | Source file of a module, which may be a submodule of a top-level one.
+sourceOfModule :: ModuleFileTable -> ModuleName -> Maybe FilePath
+sourceOfModule tbl m0 = listToMaybe
     [ f | (m, f) <- tbl, mn == m || (m ++ ".") `isPrefixOf` mn ]
   where
     -- Sorted longest-first, so the first hit is the most specific module.
-    mn = prettyShow (qnameModule qn)
+    mn = prettyShow m0
 
 -- | Is this name defined inside the given project directory?
 qnameInProject :: FilePath -> ModuleFileTable -> QName -> Bool

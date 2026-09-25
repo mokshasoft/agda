@@ -707,7 +707,11 @@ defaultOptions = Options
   , optSearchFormat          = ReportText
   , optSearchLimit           = 40
   , optSearchUnanchored      = False
-  , optWarnSectionWidth      = Nothing
+  , optWideSections          = Nothing
+  , optWideFile              = "agda-wide-sections.json"
+  , optWideFormat            = ReportJSON
+  , optCountersFile          = "agda-counters.json"
+  , optCountersFormat        = ReportJSON
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1238,11 +1242,27 @@ searchFormatFlag s o = do
   fmt <- reportFormat "--search-format" s
   return $ o { optSearchFormat = fmt }
 
-warnWideSectionsFlag :: String -> Flag CommandLineOptions
-warnWideSectionsFlag s o = case reads s of
-  [(n, "")] | n >= 0 -> return $ o { optWarnSectionWidth = Just n }
+wideSectionsFlag :: String -> Flag CommandLineOptions
+wideSectionsFlag s o = case reads s of
+  [(n, "")] | n >= 0 -> return $ o { optWideSections = Just n }
   _ -> throwError $
-    "--warn-wide-sections expects a non-negative number, got: " ++ s
+    "--wide-sections expects a non-negative number, got: " ++ s
+
+countersFileFlag :: FilePath -> Flag CommandLineOptions
+countersFileFlag s o = return $ o { optCountersFile = s }
+
+countersFormatFlag :: String -> Flag CommandLineOptions
+countersFormatFlag s o = do
+  fmt <- reportFormat "--counters-format" s
+  return $ o { optCountersFormat = fmt }
+
+wideFileFlag :: FilePath -> Flag CommandLineOptions
+wideFileFlag s o = return $ o { optWideFile = s }
+
+wideFormatFlag :: String -> Flag CommandLineOptions
+wideFormatFlag s o = do
+  fmt <- reportFormat "--wide-format" s
+  return $ o { optWideFormat = fmt }
 
 searchUnanchoredFlag :: Flag CommandLineOptions
 searchUnanchoredFlag o = return $ o { optSearchUnanchored = True }
@@ -1504,14 +1524,30 @@ standardOptions =
     , Option []     ["search-limit"] (ReqArg searchLimitFlag "N")
                     ("list at most N hits in EACH of the two sections, 0 for all\n" ++
                      "(default: 40). The reported totals are never truncated.")
-    , Option []     ["warn-wide-sections"] (ReqArg warnWideSectionsFlag "N")
-                    ("warn about each section that abstracts over N or more context\n" ++
-                     "variables. A section is a module, so this covers where-blocks and\n" ++
-                     "module applications, which are how definitions silently acquire a\n" ++
-                     "wide ambient context. A module application also reports how many\n" ++
-                     "definitions it copied: that many, times this width, is the real\n" ++
-                     "size of a one-line `module M = N ...`. A section of width zero is\n" ++
-                     "never reported: it abstracts over nothing.")
+    , Option []     ["wide-sections"] (ReqArg wideSectionsFlag "N")
+                    ("report the project's sections that abstract over N or more context\n" ++
+                     "variables, costliest first. A section is a module, so this covers\n" ++
+                     "where-blocks and module applications, which are how definitions\n" ++
+                     "silently acquire a wide ambient context. Cost is width times the\n" ++
+                     "definitions in the section -- for a one-line `module M = N ...`,\n" ++
+                     "the definitions it copied. Sections of width zero or holding no\n" ++
+                     "definitions are never listed. If checking fails, runs out of heap\n" ++
+                     "or is interrupted, the report is still written, marked incomplete:\n" ++
+                     "the module that cannot be checked is the one it is most needed for.")
+    , Option []     ["wide-file"] (ReqArg wideFileFlag "PATH")
+                    ("where to write the --wide-sections report, or - for stdout.\n" ++
+                     "Defaults to a file (agda-wide-sections.json).")
+    , Option []     ["wide-format"] (ReqArg wideFormatFlag "json|text")
+                    "format for the --wide-sections report. The default is json."
+    , Option []     ["counters-file"] (ReqArg countersFileFlag "PATH")
+                    ("where to write the per-definition counters collected by\n" ++
+                     "--profile=reduction (unfoldings) and --profile=conversion (conversion\n" ++
+                     "checks), or - for stdout. Defaults to a file (agda-counters.json). Every counted\n" ++
+                     "definition is listed, most counted first. If checking fails, runs\n" ++
+                     "out of heap or is interrupted, the counters are still written,\n" ++
+                     "marked incomplete.")
+    , Option []     ["counters-format"] (ReqArg countersFormatFlag "json|text")
+                    "format for the --counters-file report. The default is json."
     , Option []     ["search-unanchored"] (NoArg searchUnanchoredFlag)
                     ("in the instance-of section of --search-type, also report definitions\n" ++
                      "whose conclusion is a bare variable. Such a definition fits every\n" ++

@@ -321,12 +321,8 @@ addSection :: ModuleName -> TCM ()
 addSection m = do
   tel <- getContextTelescope
   let sec = Section tel
-  msec <- getSection m
-  -- Only on the first add: a redundant re-add is the same section, and
-  -- reporting it twice would suggest two of them.
-  when (isNothing msec) $ reportSectionWidth m (size tel) Nothing
   -- Make sure we do not overwrite an existing section!
-  whenJust msec $ \ sec' -> do
+  whenJustM (getSection m) $ \ sec' -> do
     -- At least not with different content!
     if (sec == sec') then do
       -- Andreas, 2015-12-02: test/Succeed/Issue1701II.agda
@@ -341,31 +337,6 @@ addSection m = do
   -- Add the new section.
   setModuleCheckpoint m
   modifySignature $ over sigSections $ Map.insert m sec
-
--- | Warn when a section abstracts over a lot of the enclosing context.
---
---   A section is a module, so this covers a @where@ block and a module
---   application alike: both lift their contents out over the ambient context,
---   and the source text says nothing about how wide that context is.  The
---   number is known here without any measurement -- it is the length of a
---   telescope already in hand -- which is what makes this a lint rather than
---   a profile.
---
---   Gated on the /width/ rather than on the number of definitions copied,
---   because width is what makes copies expensive: at width zero a module
---   application copies definitions that abstract over nothing, however many
---   of them there are.
-reportSectionWidth :: ModuleName -> Int -> Maybe (ModuleName, Int) -> TCM ()
-reportSectionWidth m w copied =
-  whenJustM (optWarnSectionWidth <$> commandLineOptions) $ \ n ->
-    -- A section abstracting over nothing is never wide, whatever the
-    -- threshold.  Without this, @--warn-wide-sections=0@ reports every module
-    -- in scope including Agda's own prelude, whose sections are all width
-    -- zero -- and, because a warning is serialised into the interface it was
-    -- raised in, that noise would be baked into the prelude's cached
-    -- interfaces and replayed on later runs that did not ask for it.
-    when (w > 0 && w >= n) $ warning $ WideSection $ SectionWidth
-      { swModule = m, swWidth = w, swCopied = copied }
 
 -- | Sets the checkpoint for the given module to the current checkpoint.
 setModuleCheckpoint :: ModuleName -> TCM ()
@@ -548,14 +519,6 @@ applySection' new ptel old ts ScopeCopyInfo{ renNames = rd, renModules = rm } = 
     , "old  =" <+> pretty old
     , "ts   =" <+> pretty ts
     ]
-  -- The copies are lifted into the *ambient* context, not into @ptel@ --
-  -- @ptel@ is what the application declares, which for @module M = N args@
-  -- is empty.  'addSection' has already reported that width for @new@; what
-  -- is added here is the multiplier, which is the number nothing in the
-  -- source text states.
-  do tel <- getContextTelescope
-     reportSectionWidth new (size tel) (Just (old, Map.size rd))
-
   _ <- Map.traverseWithKey (traverse . copyDef ts) rd
   _ <- Map.traverseWithKey (traverse . copySec ts) rm
   computePolarity (Map.elems rd >>= List1.toList)

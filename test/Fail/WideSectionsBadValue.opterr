@@ -1,0 +1,2 @@
+Error: --wide-sections expects a non-negative number, got: many
+Run 'agda --help' for help on command line options.
