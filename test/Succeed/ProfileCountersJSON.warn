@@ -4,18 +4,18 @@
   "checkedModules": ["ProfileCountersJSON"],
   "counters": {
     "unfoldings": [
-      {"name": "ProfileCountersJSON.Nat", "count": 141, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:9.6-9"},
-      {"name": "ProfileCountersJSON._≡_", "count": 20, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:13.6-9"},
-      {"name": "ProfileCountersJSON.Nat.suc", "count": 6, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:11.3-6"},
-      {"name": "ProfileCountersJSON.loop", "count": 6, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:19.1-5"},
-      {"name": "ProfileCountersJSON.Nat.zero", "count": 4, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:10.3-7"},
-      {"name": "ProfileCountersJSON.five", "count": 1, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:16.1-5"}
+      {"name": "ProfileCountersJSON.Nat", "count": 141, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:9.6-9"},
+      {"name": "ProfileCountersJSON._≡_", "count": 20, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:13.6-9"},
+      {"name": "ProfileCountersJSON.Nat.suc", "count": 6, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:11.3-6"},
+      {"name": "ProfileCountersJSON.loop", "count": 6, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:19.1-5"},
+      {"name": "ProfileCountersJSON.Nat.zero", "count": 4, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:10.3-7"},
+      {"name": "ProfileCountersJSON.five", "count": 1, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:16.1-5"}
     ],
     "conversionChecks": [
-      {"name": "ProfileCountersJSON.Nat", "count": 28, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:9.6-9"},
-      {"name": "ProfileCountersJSON.loop", "count": 3, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:19.1-5"},
-      {"name": "ProfileCountersJSON._≡_", "count": 2, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:13.6-9"},
-      {"name": "ProfileCountersJSON.Nat.zero", "count": 1, "source": ProfileCountersJSON.agda", "range": ProfileCountersJSON.agda:10.3-7"}
+      {"name": "ProfileCountersJSON.Nat", "count": 28, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:9.6-9"},
+      {"name": "ProfileCountersJSON.loop", "count": 3, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:19.1-5"},
+      {"name": "ProfileCountersJSON._≡_", "count": 2, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:13.6-9"},
+      {"name": "ProfileCountersJSON.Nat.zero", "count": 1, "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:10.3-7"}
     ]
   }
 }

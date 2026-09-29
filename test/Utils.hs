@@ -311,11 +311,15 @@ cleanOutput' agda pwd t = foldl (\ t' (rgx, n) -> replace rgx n t') t rgxs
   where
   rgxs = map (first mkRegex) $ concat
     [ [ (agda, "agda") | agda /= "agda" ]
-    , [ ("[^ (]*test.Fail.", "")
-      , ("[^ (]*test.Succeed.", "")
-      , ("[^ (]*test.Common.", "")
-      , ("[^ (]*test.Bugs.", "")
-      , ("[^ (]*test.LibSucceed.", "")
+    , [ -- The prefix stops at a double quote as well as at a space or a
+        -- parenthesis, so that a quoted path keeps its opening quote: a JSON
+        -- report's "source": "test/Succeed/X.agda" would otherwise lose it
+        -- and its golden would not be JSON.
+        ("[^ (\"]*test.Fail.", "")
+      , ("[^ (\"]*test.Succeed.", "")
+      , ("[^ (\"]*test.Common.", "")
+      , ("[^ (\"]*test.Bugs.", "")
+      , ("[^ (\"]*test.LibSucceed.", "")
       , ("\\\\", "/")
         -- Andreas, 2021-10-13, issue #5549
         -- First, replace backslashes by slashes, then try to match @pwd@,
@@ -336,7 +340,7 @@ cleanOutput' agda pwd t = foldl (\ t' (rgx, n) -> replace rgx n t') t rgxs
       -- recognize Agd (instead of Agda) as package name.
       -- See CI run: https://github.com/agda/agda/runs/3449775214?check_suite_focus=true
       , ("Agda?-[.0-9]+(-[[:alnum:]]+)?", "«Agda-package»")
-      , ("[^ (]*lib.prim", "agda-default-include-path")
+      , ("[^ (\"]*lib.prim", "agda-default-include-path")
       , ("\xe2\x80\x9b|\xe2\x80\x99|\xe2\x80\x98|`", "'")
       ]
     ]

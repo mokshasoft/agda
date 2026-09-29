@@ -50,12 +50,26 @@ run_optfail() {
 # version-specific paths out of Agda's output before comparing it against a
 # golden. Without this a golden embeds the absolute path of whoever generated
 # it and fails for everyone else.
+# The prefix stops at a double quote too, as in test/Utils.hs, so that a JSON
+# report's quoted paths keep their opening quote.
 clean() {
-  sed -e 's|[^ (]*test/Fail/||g' \
-      -e 's|[^ (]*test/Succeed/||g' \
-      -e 's|[^ (]*test/Common/||g' \
-      -e 's|[^ (]*lib/prim|agda-default-include-path|g' \
+  sed -e 's|[^ ("]*test/Fail/||g' \
+      -e 's|[^ ("]*test/Succeed/||g' \
+      -e 's|[^ ("]*test/Common/||g' \
+      -e 's|[^ ("]*lib/prim|agda-default-include-path|g' \
       -e 's|Agda-[0-9][.0-9]*|\xc2\xabAgda-package\xc2\xbb|g'
+}
+
+# A JSON report's golden must itself be JSON. Normalisation once broke this
+# silently: every golden still matched the output, and none of them parsed.
+# The report comes first in the golden; Agda's warnings may follow it.
+check_json() {
+  local golden=$1 t=$2
+  if python3 -c 'import json,sys; json.JSONDecoder().raw_decode(open(sys.argv[1], encoding="utf-8").read().lstrip())' "$golden" 2>/dev/null; then
+    echo "PASS  $t (valid JSON)"; pass=$((pass+1))
+  else
+    echo "FAIL  $t (golden is not valid JSON)"; fail=$((fail+1))
+  fi
 }
 
 compare() {
@@ -78,6 +92,9 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          ProfileCountersJSON ProfileCountersText ProfileConversionAlone \
          WideSectionsUnfold; do
   run_succeed $t
+done
+for t in DuplicateTypesJSON SearchTypeJSON WideSectionsJSON ProfileCountersJSON; do
+  [ "$MODE" = accept ] || check_json test/Succeed/$t.warn $t
 done
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done
 run_fail_whole WideSectionsAbort
