@@ -41,6 +41,7 @@ data ProfileOption = Internal     -- ^ Measure time taken by various parts of th
                    | Conversion   -- ^ Collect statistics about conversion checking
                    | Instances    -- ^ Collect statistics about instance search
                    | Reduction    -- ^ Count unfoldings per definition
+                   | Allocation   -- ^ Measure memory allocated per definition checked
   deriving (Show, Eq, Ord, Enum, Bounded, Generic)
 
 instance NFData ProfileOption

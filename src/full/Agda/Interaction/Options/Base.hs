@@ -1541,9 +1541,10 @@ standardOptions =
                     "format for the --wide-sections report. The default is json."
     , Option []     ["counters-file"] (ReqArg countersFileFlag "PATH")
                     ("where to write the per-definition counters collected by\n" ++
-                     "--profile=reduction (unfoldings) and --profile=conversion (conversion\n" ++
-                     "checks), or - for stdout. Defaults to a file (agda-counters.json).\n" ++
-                     "--profile=reduction writes them whether or not this is given;\n" ++
+                     "--profile=reduction (unfoldings), --profile=allocation (bytes allocated)\n" ++
+                     "and --profile=conversion (conversion checks), or - for stdout. Defaults\n" ++
+                     "to a file (agda-counters.json). --profile=reduction and\n" ++
+                     "--profile=allocation write them whether or not this is given;\n" ++
                      "--profile=conversion counts per definition only when it is. Every counted\n" ++
                      "definition is listed, most counted first. If checking fails, runs\n" ++
                      "out of heap or is interrupted, the counters are still written,\n" ++

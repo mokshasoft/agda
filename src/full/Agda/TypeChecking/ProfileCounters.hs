@@ -51,11 +51,25 @@
 --     function's count.
 --
 --   [They say who caused them.]  Each unfolding is also attributed to the
---     definition whose checking caused it ('envCheckingDefinition'), since a
+--     definition whose checking caused it ('envCheckingDefinitions'), since a
 --     count on a library function says what was hot but not which line of
 --     the project made it so.  Work done outside any one definition -- a
 --     module application, termination checking of a mutual block -- is
 --     attributed to no definition.
+--
+--   [Memory is counted per definition checked.]  The bytes allocated while
+--     checking each definition, from GHC's per-thread allocation counter:
+--     a primop, cheap enough to read at every definition, and blind to
+--     neither evaluator nor elaboration.  Allocation is not residency -- a
+--     heap overflow is about what stays live -- but a definition that
+--     allocates gigabytes is where to look first.  The size of normal forms
+--     is not measured: the fast evaluator never builds the terms, and
+--     measuring a term forces it, which changes the memory behaviour being
+--     measured.
+--
+--   [They say what was being checked when a run stopped.]  The definitions
+--     being checked are kept in a global ('inProgress') that an exception
+--     leaves as it was, so the report of a run that died names them.
 --
 --   [They are process-global.]  As with the benchmarking counters, one
 --     process accumulates across everything it checks.  Which project
@@ -79,12 +93,22 @@ module Agda.TypeChecking.ProfileCounters
     -- * Which modules were checked
   , noteChecked
   , getChecked
+    -- * Definitions being checked, and what they allocate
+  , checkingDefinition
+  , getInProgress
+  , allocationCounter
   ) where
 
+import Control.Monad (when)
+import Control.Monad.IO.Class (MonadIO (..))
+
+import Data.Int (Int64)
 import Data.IORef
 import Data.Maybe (isJust)
 import qualified Data.HashMap.Strict as HMap
 import qualified Data.Set as Set
+
+import GHC.Conc (getAllocationCounter)
 
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -92,6 +116,8 @@ import Agda.Syntax.Abstract.Name (QName)
 
 import Agda.Interaction.Options.HasOptions (HasOptions (..))
 import Agda.Interaction.Options.Types (optCountersFile)
+import Agda.TypeChecking.Monad.Base
+  ( CheckingFrame (..), MonadTCEnv (..), TCEnv (..), asksTC )
 import Agda.TypeChecking.Monad.Debug (MonadDebug, hasProfileOption)
 
 import qualified Agda.Utils.ProfileOptions as Profile
@@ -112,13 +138,16 @@ data Counters = Counters
   , cCaused   :: !(HMap.HashMap Cause (HMap.HashMap QName Int))
       -- ^ The unfoldings again, by the definition whose checking caused
       --   them: cause, then what was unfolded.
+  , cAlloc    :: !(HMap.HashMap QName (Int, Int))
+      -- ^ Bytes allocated while checking a definition: its own, and
+      --   including the definitions nested in it.
   }
 
 -- | The definition being checked when a tick fired, if any.
 type Cause = Maybe QName
 
 emptyCounters :: Counters
-emptyCounters = Counters HMap.empty HMap.empty HMap.empty
+emptyCounters = Counters HMap.empty HMap.empty HMap.empty HMap.empty
 
 -- | The counters.  Global because the hot hooks run in 'ReduceM', which is
 --   pure; see the module header.
@@ -130,15 +159,16 @@ getCounters :: IO Counters
 getCounters = readIORef counters
 
 -- | Is the counters report wanted at all?  It is when @--profile=reduction@
---   is on, or when @--counters-file@ is given.
+--   or @--profile=allocation@ is on, or when @--counters-file@ is given.
 --
 --   @--profile=conversion@ alone does not ask for it: that option predates
 --   the counters, and a run using it must neither write a file it did not
 --   ask for nor pay for per-definition ticks.
 countersRequested :: (HasOptions m, MonadDebug m) => m Bool
 countersRequested = do
-  red <- hasProfileOption Profile.Reduction
-  if red then pure True else isJust . optCountersFile <$> commandLineOptions
+  red   <- hasProfileOption Profile.Reduction
+  alloc <- hasProfileOption Profile.Allocation
+  if red || alloc then pure True else isJust . optCountersFile <$> commandLineOptions
 
 ---------------------------------------------------------------------------
 -- * Ticking
@@ -186,8 +216,8 @@ incUnfold by q c0 = c { cCaused = HMap.alter (Just . inner) by (cCaused c) }
 -- | A definition's body was unfolded.  §4.1: the direct measurement of
 --   \"evaluated N times instead of once\", and the number that distinguishes
 --   an expensive definition from a cheap one in a hot loop -- which demand
---   opposite fixes.  The caller checks 'envProfileCounting' and passes
---   'envCheckingDefinition' as the cause.
+--   opposite fixes.  The caller checks 'envProfileCounting' and passes the
+--   innermost of 'envCheckingDefinitions' as the cause.
 tickUnfold :: Monad m => Cause -> QName -> m ()
 tickUnfold by q = bumpM (incUnfold by q)
 
@@ -220,3 +250,55 @@ noteChecked m = modifyIORef' checked (Set.insert m)
 
 getChecked :: IO [String]
 getChecked = Set.toList <$> readIORef checked
+
+---------------------------------------------------------------------------
+-- * Definitions being checked, and what they allocate
+---------------------------------------------------------------------------
+
+-- | The definitions being checked, innermost first, as of the last one
+--   entered or left.  Set on entry and reset on a normal exit only, so an
+--   exception leaves it naming the definitions it escaped from.
+inProgress :: IORef [CheckingFrame]
+inProgress = unsafePerformIO $ newIORef []
+{-# NOINLINE inProgress #-}
+
+getInProgress :: IO [CheckingFrame]
+getInProgress = readIORef inProgress
+
+-- | The thread's allocation counter, which decreases as it allocates.
+allocationCounter :: IO Int64
+allocationCounter = getAllocationCounter
+
+-- | Check a definition, recording it as the one being checked.
+--
+--   Its allocation is recorded when it is checked normally, the counters are
+--   counting, and @--profile=allocation@ is on.  Allocation is an option of
+--   its own because the numbers depend on the GHC version and the build.  What an inner definition allocates is added to its
+--   parent's nested total, so a definition's own share is its whole less
+--   that.  Called where "Agda.TypeChecking.Rules.Decl" bills a definition
+--   for @--profile=definitions@.
+checkingDefinition
+  :: (MonadTCEnv m, MonadIO m, HasOptions m, MonadDebug m)
+  => QName -> m a -> m a
+checkingDefinition x m = do
+  parent <- asksTC envCheckingDefinitions
+  frame  <- liftIO $ CheckingFrame x <$> getAllocationCounter <*> newIORef 0
+  let here = frame : parent
+  liftIO $ writeIORef inProgress here
+  r <- localTC (\ e -> e { envCheckingDefinitions = here }) m
+  counting <- asksTC envProfileCounting
+  record   <- if counting then hasProfileOption Profile.Allocation else pure False
+  liftIO $ do
+    end    <- getAllocationCounter
+    nested <- readIORef (cfNested frame)
+    let whole = cfAllocStart frame - end
+    case parent of
+      p : _ -> modifyIORef' (cfNested p) (+ whole)
+      []    -> pure ()
+    when record $ modifyIORef' counters $ \ c -> c
+      { cAlloc = HMap.insertWith add x
+                   (fromIntegral (whole - nested), fromIntegral whole) (cAlloc c) }
+    writeIORef inProgress parent
+  pure r
+  where
+    add (a, b) (a', b') = (a + a', b + b')

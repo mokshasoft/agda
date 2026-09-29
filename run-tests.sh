@@ -72,6 +72,27 @@ check_json() {
   fi
 }
 
+# --profile=allocation reports bytes, which depend on the GHC version and the
+# build, so its test checks the report's structure rather than a golden.
+check_allocation() {
+  local t=ProfileAllocation dir=test/Succeed
+  rm -rf $dir/_build 2>/dev/null
+  if $AGDA -v0 -i$dir -itest/ --no-libraries --profile=allocation \
+       --counters-file=- $dir/$t.agda 2>&1 | python3 -c '
+import json, sys
+a = {r["name"].split(".", 1)[1]: r
+     for r in json.load(sys.stdin)["counters"]["allocation"]}
+for d in ["double", "f", "_.g", "test"]:
+    assert d in a, "no row for " + d
+    assert 0 < a[d]["bytes"] <= a[d]["bytesWithNested"], d
+assert a["f"]["bytesWithNested"] >= a["f"]["bytes"] + a["_.g"]["bytesWithNested"], "f lacks g"
+'; then
+    echo "PASS  $t (structure)"; pass=$((pass+1))
+  else
+    echo "FAIL  $t (structure)"; fail=$((fail+1))
+  fi
+}
+
 compare() {
   local golden=$1 got=$2 t=$3
   if [ "$MODE" = accept ]; then printf '%s\n' "$got" > "$golden"; echo "ACCEPT $t"; return; fi
@@ -93,6 +114,7 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          WideSectionsUnfold; do
   run_succeed $t
 done
+[ "$MODE" = accept ] || check_allocation
 for t in DuplicateTypesJSON SearchTypeJSON WideSectionsJSON ProfileCountersJSON; do
   [ "$MODE" = accept ] || check_json test/Succeed/$t.warn $t
 done

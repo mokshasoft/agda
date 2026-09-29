@@ -57,6 +57,7 @@ import Data.Text (Text)
 import qualified Data.Text.Lazy as TL
 
 import Data.IORef
+import Data.Int (Int64)
 
 import GHC.Generics (Generic)
 
@@ -4161,11 +4162,26 @@ data TCEnv =
                 --   while checking a module outside the project, so that a
                 --   library re-checked for want of an interface does not add
                 --   its own work.  See "Agda.TypeChecking.ProfileCounters".
-          , envCheckingDefinition :: Maybe QName
-                -- ^ The definition being checked, to which the profile
-                --   counters attribute the reduction its checking causes.
+          , envCheckingDefinitions :: [CheckingFrame]
+                -- ^ The definitions being checked, innermost first.  The
+                --   profile counters attribute the reduction checking causes
+                --   to the innermost, and the memory it allocates to each.
           }
     deriving (Generic)
+
+-- | A definition being checked, as the profile counters see it.
+data CheckingFrame = CheckingFrame
+  { cfName       :: QName
+  , cfAllocStart :: !Int64
+      -- ^ The thread's allocation counter when checking it began.  GHC's
+      --   counter decreases as the thread allocates.
+  , cfNested     :: !(IORef Int64)
+      -- ^ Bytes allocated by the definitions nested in it, so that its own
+      --   share can be told from theirs.
+  }
+
+instance NFData CheckingFrame where
+  rnf (CheckingFrame q a _) = rnf q `seq` rnf a
 
 initEnv :: TCEnv
 initEnv = TCEnv { envContext             = []
@@ -4232,7 +4248,7 @@ initEnv = TCEnv { envContext             = []
                 , envCurrentOpaqueId        = Nothing
                 , envTermCheckReducing      = False
                 , envProfileCounting        = True
-                , envCheckingDefinition     = Nothing
+                , envCheckingDefinitions    = []
                 }
 
 class LensTCEnv a where

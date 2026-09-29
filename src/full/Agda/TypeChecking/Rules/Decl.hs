@@ -7,6 +7,7 @@ module Agda.TypeChecking.Rules.Decl where
 import Prelude hiding ( null )
 
 import Control.Monad.Writer (tell)
+import Control.Monad.IO.Class (MonadIO)
 
 import Data.Either (partitionEithers)
 import qualified Data.Foldable as Fold
@@ -44,6 +45,7 @@ import Agda.TypeChecking.Positivity
 import Agda.TypeChecking.Positivity.Occurrence
 import Agda.TypeChecking.Polarity
 import Agda.TypeChecking.Pretty
+import Agda.TypeChecking.ProfileCounters (checkingDefinition)
 import Agda.TypeChecking.Primitive
 import Agda.TypeChecking.ProjectionLike
 import Agda.TypeChecking.Unquote
@@ -243,16 +245,16 @@ checkDecl d = setCurrentRange d $ do
 
     -- Switch maybe to abstract mode, benchmark, and debug print bracket.
     check :: forall m i a
-          . ( MonadTCEnv m, MonadPretty m, MonadDebug m
+          . ( MonadTCEnv m, MonadPretty m, MonadDebug m, MonadIO m
             , MonadBench m, Bench.BenchPhase m ~ Phase
             , AnyIsAbstract i
             , AllAreOpaque i
             )
           => QName -> i -> m a -> m a
     -- The definition is also recorded for the profile counters, which
-    -- attribute the reduction checking it causes to it.
+    -- attribute to it the reduction and allocation checking it causes.
     check x i m = Bench.billTo [Bench.Definition x] $
-                  localTC (\ e -> e { envCheckingDefinition = Just x }) $ do
+                  checkingDefinition x $ do
       reportSDoc "tc.decl" 5 $ ("Checking" <+> prettyTCM x) <> "."
       reportSLn "tc.decl.abstract" 25 $ show $ anyIsAbstract i
       r <- checkMaybeAbstractly i m
@@ -925,7 +927,7 @@ checkTypeSignature' gtel (A.ScopedDecl scope ds) = do
   mapM_ (checkTypeSignature' gtel) ds
 checkTypeSignature' gtel (A.Axiom funSig i info mp x e) =
   Bench.billTo [Bench.Definition x] $
-  localTC (\ env -> env { envCheckingDefinition = Just x }) $
+  checkingDefinition x $
   Bench.billTo [Bench.Typing, Bench.TypeSig] $
     let abstr = case Info.defAccess i of
           PrivateAccess{}

@@ -856,7 +856,7 @@ reduceTm rEnv bEnv !constInfo normalisation =
     -- machine's hottest case pays one Bool test when the option is off.
     countUnfolds = envProfileCounting (redEnv rEnv)
                    && unReduceM (hasProfileOption Profile.Reduction) rEnv
-    cause        = envCheckingDefinition (redEnv rEnv)
+    cause        = cfName <$> listToMaybe (envCheckingDefinitions (redEnv rEnv))
     -- The slow evaluator counts in 'unfoldDefinitionStep'. A definition the
     -- machine hands to it ('COther') is counted there, so not here as well.
     -- The one exception is primErase, whose EraseK frame falls back to slow

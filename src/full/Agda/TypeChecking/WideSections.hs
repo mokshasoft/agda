@@ -216,9 +216,12 @@ reportWideSections
 reportWideSections projectDir n outFile format done = do
   counted <- hasProfileOption Profile.Reduction
   ranked  <- collect projectDir n counted
+  stopped <- case done of
+    Complete     -> pure []
+    Incomplete _ -> whereStopped projectDir
   withOutputSink outFile $ \ put -> case format of
-    ReportJSON -> renderJSON put projectDir n done counted ranked
-    ReportText -> renderText put projectDir n done counted ranked
+    ReportJSON -> renderJSON put projectDir n done counted stopped ranked
+    ReportText -> renderText put projectDir n done counted stopped ranked
   -- A file nobody knows was written is a file nobody opens.
   unless (outFile == "-") $ alwaysReportSLn "" 1 $
     "Wide sections: " ++ show (length ranked) ++ " listed"
@@ -227,6 +230,15 @@ reportWideSections projectDir n outFile format done = do
     incompleteNote = \case
       Complete       -> ""
       Incomplete why -> " (INCOMPLETE: " ++ why ++ ")"
+
+-- | The definitions being checked when checking stopped, innermost first,
+--   each with its range when it has one to trust.
+whereStopped :: FilePath -> TCM [(String, String)]
+whereStopped projectDir = do
+  stack <- liftIO PC.getInProgress
+  tbl   <- moduleFileTable
+  pure [ (prettyShow q, trustedRange projectDir (sourceOfModule tbl (qnameModule q)) q)
+       | q <- map cfName stack ]
 
 -- | The caveats, which are part of the output rather than documentation of
 --   it: a reader of the report needs them and has not read this module.
@@ -249,12 +261,16 @@ caveat done counted = concat
   ]
 
 renderText
-  :: Sink -> FilePath -> Int -> Completeness -> Bool -> [Wide] -> TCM ()
-renderText put projectDir n done counted ranked = do
+  :: Sink -> FilePath -> Int -> Completeness -> Bool -> [(String, String)]
+  -> [Wide] -> TCM ()
+renderText put projectDir n done counted stopped ranked = do
   put $ unlines $
     ("Wide sections (width >= " ++ show (max 1 n) ++ "): "
        ++ show (length ranked)) :
     map ("  " ++) (caveat done counted)
+  unless (null stopped) $ put $ unlines $
+    "Checking when it stopped (innermost first):" :
+    [ "  " ++ q ++ (if null r then "" else "  " ++ r) | (q, r) <- stopped ]
   unless (null ranked) $
     put $ unlines $
       (pad 8 "cost" ++ pad 7 "width" ++ pad 6 "defs" ++ pad 8 "copies"
@@ -275,8 +291,9 @@ renderText put projectDir n done counted ranked = do
       ]
 
 renderJSON
-  :: Sink -> FilePath -> Int -> Completeness -> Bool -> [Wide] -> TCM ()
-renderJSON put projectDir n done counted ranked = do
+  :: Sink -> FilePath -> Int -> Completeness -> Bool -> [(String, String)]
+  -> [Wide] -> TCM ()
+renderJSON put projectDir n done counted stopped ranked = do
   put $ unlines $ ("{" :) $ concat
     [ withComma $ jField 1 "threshold" (JNum (max 1 n))
     , withComma $ jField 1 "complete" $ JBool $ case done of
@@ -285,6 +302,11 @@ renderJSON put projectDir n done counted ranked = do
     , case done of
         Complete       -> []
         Incomplete why -> withComma $ jField 1 "stoppedBy" (JStr why)
+    , case done of
+        Complete     -> []
+        Incomplete _ -> withComma $ jField 1 "checkingWhenStopped" $ JArr
+          [ JObj $ ("name", JStr q) : [ ("range", JStr r) | not (null r) ]
+          | (q, r) <- stopped ]
     , withComma $ jField 1 "count" (JNum (length ranked))
     , withComma $ jField 1 "note" (JStr (oneLine (unlines (caveat done counted))))
     ]

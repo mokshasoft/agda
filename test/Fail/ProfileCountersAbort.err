@@ -1,7 +1,10 @@
 Counts of forced evaluations, per definition, most counted first.
 Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
 The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.
-INCOMPLETE: the run stopped (type error).  Every count is what had been counted when it stopped.
+INCOMPLETE: the run stopped (type error).  Every count is what had been counted when it stopped.  The definitions being checked when it stopped are listed, innermost first.
+
+checking when it stopped (innermost first)
+  ProfileCountersAbort.bad  function  ProfileCountersAbort.agda:23.1-4
 
 counted modules (1)
   ProfileCountersAbort

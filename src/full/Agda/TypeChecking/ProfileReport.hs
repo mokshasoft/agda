@@ -157,6 +157,22 @@ causeRows descs m = sortOn key
   where
     key r = (Down (crTotal r), fmap dName (crCause r), fmap dSource (crCause r))
 
+-- | What checking one definition allocated.
+data AllocRow = AllocRow
+  { arDesc  :: Desc
+  , arOwn   :: Int
+      -- ^ Less what the definitions nested in it allocated.
+  , arWhole :: Int
+  }
+
+-- | Most allocated first, by a definition's own share: ranked by the whole,
+--   every definition would sit below the one it is nested in.
+allocRows :: HMap.HashMap QName Desc -> HMap.HashMap QName (Int, Int) -> [AllocRow]
+allocRows descs m = sortOn key
+  [ AllocRow (descs HMap.! q) own whole | (q, (own, whole)) <- HMap.toList m ]
+  where
+    key a = (Down (arOwn a), dName (arDesc a), dSource (arDesc a), dRange (arDesc a))
+
 -- | Write the counters of every kind whose profile option is on, when the
 --   report was asked for at all ('PC.countersRequested').  Nothing is written
 --   when no kind is on: a file of empty sections would read as "nothing was
@@ -165,22 +181,35 @@ writeProfileCounters :: Completeness -> TCM ()
 writeProfileCounters done = do
   requested <- PC.countersRequested
   enabled   <- filterM (hasProfileOption . kOption) kinds
-  when (requested && not (null enabled)) $ do
+  allocOn   <- hasProfileOption Profile.Allocation
+  when (requested && (not (null enabled) || allocOn)) $ do
     opts       <- commandLineOptions
     cs         <- liftIO PC.getCounters
     checked    <- liftIO PC.getChecked
+    -- Read before anything else here allocates much.
+    now        <- liftIO PC.allocationCounter
+    stack      <- case done of
+                    Complete     -> pure []
+                    Incomplete _ -> liftIO PC.getInProgress
     projectDir <- runProjectDir "."
     tbl        <- moduleFileTable
     byCause    <- hasProfileOption Profile.Reduction
-    -- Everything counted, and every definition that caused unfoldings.
+    -- Everything counted, every definition that caused unfoldings, and
+    -- every one being checked when the run stopped.
     let names = HMap.keys $ HMap.unions $
           [ () <$ kGet k cs | k <- enabled ] ++
           [ HMap.fromList [ (q, ()) | Just q <- HMap.keys (PC.cCaused cs) ]
-          | byCause ]
+          | byCause ] ++
+          [ () <$ PC.cAlloc cs | allocOn ] ++
+          [ HMap.fromList [ (cfName f, ()) | f <- stack ] ]
     descs      <- describeAll projectDir tbl names
     let outFile = fromMaybe "agda-counters.json" (optCountersFile opts)
         listed  = [ (k, rows descs (kGet k cs)) | k <- enabled ]
         causes  = [ causeRows descs (PC.cCaused cs) | byCause ]
+        allocs  = [ allocRows descs (PC.cAlloc cs) | allocOn ]
+        -- Innermost first, with what each had allocated so far.
+        stopped = [ (descs HMap.! cfName f, fromIntegral (cfAllocStart f - now))
+                  | f <- stack ]
         notes   = concat
           [ [ "Counts of forced evaluations, per definition, most counted first."
             , "Counted only while checking the modules of the project listed as"
@@ -192,11 +221,17 @@ writeProfileCounters done = do
               ++ " it unfolded most; work outside any definition (a module"
               ++ " application, termination checking) has no name."
             | byCause ]
+          , [ "Allocation is the bytes GHC allocated while checking each"
+              ++ " definition: its own, and with the definitions nested in it."
+              ++ "  Allocated, not live: a heap overflow is about what stays live,"
+              ++ " but a definition that allocates gigabytes is where to look first."
+            | allocOn ]
           , case done of
               Complete -> []
               Incomplete why ->
                 [ "INCOMPLETE: the run stopped (" ++ why ++ ").  Every count is"
-                  ++ " what had been counted when it stopped." ]
+                  ++ " what had been counted when it stopped.  The definitions being"
+                  ++ " checked when it stopped are listed, innermost first." ]
           ]
     withOutputSink outFile $ \ put -> case optCountersFormat opts of
       ReportJSON -> do
@@ -209,6 +244,11 @@ writeProfileCounters done = do
               Incomplete why -> withComma $ jField 1 "stoppedBy" (JStr why)
           , withComma $ jField 1 "note" (JStr (unwords notes))
           , withComma $ jField 1 "countedModules" (JArr (map JStr checked))
+          , case done of
+              Complete     -> []
+              Incomplete _ -> withComma $ jField 1 "checkingWhenStopped" $ JArr
+                [ JObj $ descJ d ++ [ ("allocatedSoFar", JNum a) | allocOn ]
+                | (d, a) <- stopped ]
           ]
         put $ indent 1 ++ jsonString "counters" ++ ": {"
         let section :: Int -> String -> (a -> J) -> [a] -> TCM ()
@@ -219,9 +259,14 @@ writeProfileCounters done = do
               put $ (if n == 0 then "" else "\n" ++ indent 2) ++ "]"
         forM_ (zip [0 ..] listed) $ \ (i, (k, rs)) -> section i (kKey k) rowJ rs
         forM_ causes $ section (length listed) "unfoldingsByCause" causeJ
+        forM_ allocs $ section (length listed + length causes) "allocation" allocJ
         put $ "\n" ++ indent 1 ++ "}\n}\n"
       ReportText -> do
         put $ unlines notes
+        unless (null stopped) $ put $ unlines $
+          "" : "checking when it stopped (innermost first)"
+             : [ "  " ++ (if allocOn then padLeft 14 (show a) ++ "  " else "") ++ descT d
+               | (d, a) <- stopped ]
         put $ unlines $
           "" : ("counted modules (" ++ show (length checked) ++ ")")
              : map ("  " ++) checked
@@ -235,6 +280,12 @@ writeProfileCounters done = do
                    ++ maybe "(no definition)" descT (crCause cr))
                  : map (rowT 14) (crTop cr)
                | cr <- crs ]
+        forM_ allocs $ \ ars -> put $ unlines $
+          "" : ("bytes allocated while checking, own and with nested definitions ("
+                  ++ show (length ars) ++ ")")
+             : [ "  " ++ padLeft 14 (show (arOwn a)) ++ padLeft 16 (show (arWhole a))
+                   ++ "  " ++ descT (arDesc a)
+               | a <- ars ]
     -- A file nobody knows was written is a file nobody opens.
     unless (outFile == "-") $ alwaysReportSLn "" 1 $
       "Profile counters" ++ (case done of
@@ -249,6 +300,8 @@ writeProfileCounters done = do
       , [ ("range", JStr (dRange d)) | not (null (dRange d)) ]
       ]
     rowJ (Row d c) = JObj $ descJ d ++ [ ("count", JNum c) ]
+    allocJ a = JObj $ descJ (arDesc a) ++
+      [ ("bytes", JNum (arOwn a)), ("bytesWithNested", JNum (arWhole a)) ]
     causeJ cr = JObj $ concat
       [ maybe [ ("name", JNull) ] descJ (crCause cr)
       , [ ("count", JNum (crTotal cr))

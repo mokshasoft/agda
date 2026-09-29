@@ -1213,9 +1213,9 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
     withWideSectionsOnAbort (isMain /= NotMainInterface)
       (runProjectDir (takeDirectory fp)) $
     Bench.billTo [Bench.TopModule mname] $
-    localTC (\ e -> e { envCurrentPath        = Just sfi
-                      , envProfileCounting    = counting
-                      , envCheckingDefinition = Nothing
+    localTC (\ e -> e { envCurrentPath         = Just sfi
+                      , envProfileCounting     = counting
+                      , envCheckingDefinitions = []
                       }) do
 
     let onlyScope = isMain == MainInterface ScopeCheck
