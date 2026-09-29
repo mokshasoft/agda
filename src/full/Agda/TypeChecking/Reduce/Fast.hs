@@ -62,6 +62,7 @@ import Agda.Syntax.Literal
 
 import Agda.TypeChecking.CompiledClause
 import Agda.TypeChecking.Monad hiding (Closure(..))
+import Agda.TypeChecking.ProfileCounters (countUnfold)
 import Agda.TypeChecking.Reduce as R
 import Agda.TypeChecking.Rewriting (rewrite)
 import Agda.TypeChecking.Substitute
@@ -83,6 +84,7 @@ import Agda.Utils.Zipper
 import qualified Agda.Utils.SmallSet as SmallSet
 
 import Agda.Utils.Impossible
+import qualified Agda.Utils.ProfileOptions as Profile
 
 import Debug.Trace
 
@@ -849,6 +851,21 @@ reduceTm rEnv bEnv !constInfo normalisation =
       | doDebug   = trace . show
       | otherwise = const id
 
+    -- Per-definition unfolding counts (--profile=reduction). The option is
+    -- read once per call of the machine, not once per step, so that the
+    -- machine's hottest case pays one Bool test when the option is off.
+    countUnfolds = unReduceM (hasProfileOption Profile.Reduction) rEnv
+    -- The slow evaluator counts in 'unfoldDefinitionStep'. A definition the
+    -- machine hands to it ('COther') is counted there, so not here as well.
+    -- The one exception is primErase, whose EraseK frame falls back to slow
+    -- reduce when its arguments are not equal literals: that is counted twice.
+    tickDef :: QName -> CompactDefn -> a -> a
+    tickDef f def
+      | countUnfolds, not (isOther def) = countUnfold f
+      | otherwise                       = id
+    isOther COther = True
+    isOther _      = False
+
     -- Checking for built-in zero and suc
     BuiltinEnv{ bZero = zero, bSuc = suc, bRefl = refl0 } = bEnv
     conNameId = nameId . qnameName . conName
@@ -891,11 +908,12 @@ reduceTm rEnv bEnv !constInfo normalisation =
         -- argument and pushing the appropriate control frame for primitive functions. Fall back to
         -- slow reduce for unsupported definitions.
         Def f [] ->
-          evalIApplyAM spine ctrl $
           let CompactDef{ cdefNonterminating = nonterm
                         , cdefUnconfirmed    = unconf
                         , cdefDef            = def } = constInfo f
-          in case def of
+          in tickDef f def $
+          evalIApplyAM spine ctrl $
+          case def of
             CFun{ cfunCompiled = cc } -> runAM (Match f cc spine ([] :> cl) ctrl)
             CAxiom         -> rewriteAM done
             CTyCon         -> rewriteAM done

@@ -11,6 +11,10 @@
 --   terminal.  Every counted definition is listed, not a top few, since which
 --   of them matter is for the reader to decide.
 --
+--   Each row carries the definition's source and range as well as its name.
+--   The name alone does not identify it: every @where@ block is a module
+--   named @_@, so two definitions in different blocks can print the same.
+--
 --   == When the run does not finish
 --
 --   The run these are most needed for is one that does not finish: it runs
@@ -27,20 +31,25 @@ module Agda.TypeChecking.ProfileReport
 import Prelude hiding (null)
 
 import qualified Control.Exception as E
-import Control.Monad (filterM, unless)
+import Control.Monad (filterM, forM, forM_, unless, when)
 import Control.Monad.IO.Class (liftIO)
 
 import qualified Data.HashMap.Strict as HMap
 import Data.IORef (readIORef, writeIORef)
+import Data.List (sortOn)
+import Data.Maybe (fromMaybe)
+import qualified Data.Map.Strict as MapS
+import Data.Ord (Down (..))
 
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 
 import Agda.Syntax.Common.Pretty (prettyShow)
-import Agda.Syntax.Internal (QName)
+import Agda.Syntax.Internal (QName, qnameModule)
 
 import Agda.Interaction.Options
-  ( ReportFormat (..), optCountersFile, optCountersFormat, optFastReduce )
+  ( ReportFormat (..), optCountersFile, optCountersFormat )
 import Agda.TypeChecking.AnalysisOutput
+import Agda.TypeChecking.DeadCode (ModuleFileTable, moduleFileTable, sourceOfModule)
 import Agda.TypeChecking.Monad
 import qualified Agda.TypeChecking.ProfileCounters as PC
 
@@ -58,43 +67,74 @@ data Kind = Kind
   , kGet    :: PC.Counters -> HMap.HashMap QName Int
   }
 
--- | The counters that something records.
---
---   The store also has room for the largest normal form, constraint wakeups
---   and serialised size, but nothing ticks those yet.  They are left out
---   rather than written as empty lists, which would read as "measured, and
---   nothing found" -- the one misreading a report must not invite.  Each
---   goes here when its hook exists.
+-- | The counters that something records.  Each further one goes here when
+--   its hook exists, and not before: an empty list would read as "measured,
+--   and nothing found" -- the one misreading a report must not invite.
 kinds :: [Kind]
 kinds =
   [ Kind "unfoldings"       "unfoldings"        Profile.Reduction  PC.cUnfold
   , Kind "conversionChecks" "conversion checks" Profile.Conversion PC.cConv
   ]
 
--- | Write the counters of every kind whose profile option is on.  Nothing is
---   written when none is: a file of empty sections would read as "nothing
---   was counted" rather than "nothing was asked for".
+-- | One listed definition.
+data Row = Row
+  { rName   :: String
+  , rCount  :: Int
+  , rSource :: Maybe FilePath
+      -- ^ Relative to the project, when inside it.
+  , rRange  :: String
+      -- ^ Empty when the name carries no range that can be trusted.
+  }
+
+-- | Most counted first.  Ties break on name, then on source and range, so
+--   that two runs order the same rows the same way: never on anything
+--   allocation-ordered, since that shifts under unrelated edits.
+--
+--   The range is the definition's, read off the signature.  The key a count
+--   is stored under is whichever occurrence of the name was ticked first,
+--   and a name's range is that of the occurrence -- a use site, not where
+--   the definition is.
+rows :: FilePath -> ModuleFileTable -> HMap.HashMap QName Int -> TCM [Row]
+rows projectDir tbl m = do
+  defined <- forM (HMap.toList m) $ \ (q, c) ->
+    (, c) . either (const q) defName <$> getConstInfo' q
+  pure $ sortOn (\ r -> (Down (rCount r), rName r, rSource r, rRange r))
+    [ Row { rName   = prettyShow q
+          , rCount  = c
+          , rSource = relativeTo projectDir <$> src
+          , rRange  = trustedRange projectDir src q
+          }
+    | (q, c) <- defined
+    , let src = MapS.findWithDefault Nothing (qnameModule q) sources
+    ]
+  where
+    -- Looked up once per module rather than once per name: a module
+    -- lookup scans the whole file table.
+    sources = MapS.fromList
+      [ (x, sourceOfModule tbl x) | x <- map qnameModule (HMap.keys m) ]
+
+-- | Write the counters of every kind whose profile option is on, when the
+--   report was asked for at all ('PC.countersRequested').  Nothing is written
+--   when no kind is on: a file of empty sections would read as "nothing was
+--   counted" rather than "nothing was asked for".
 writeProfileCounters :: Completeness -> TCM ()
 writeProfileCounters done = do
-  enabled <- filterM (hasProfileOption . kOption) kinds
-  unless (null enabled) $ do
-    opts <- commandLineOptions
-    cs   <- liftIO PC.getCounters
-    -- A silent shortfall would be the worst outcome here: Agda dispatches to
-    -- the fast evaluator by default (Reduce.hs, `ifM shouldTryFastReduce`),
-    -- which does not go through unfoldDefinitionStep and so is not counted.
-    -- Saying so beats reporting numbers that look complete and are not.
-    fast <- (&&) <$> hasProfileOption Profile.Reduction
-                 <*> (optFastReduce <$> pragmaOptions)
-    let outFile = optCountersFile opts
-        rows k  = PC.topBy 0 (kGet k cs)
-        notes   = concat
-          [ [ "Counts of forced evaluations, per definition, most counted first." ]
-          , [ "The unfolding counts exclude the fast evaluator,"
-            ++ " which handles most reduction by default and does not go through"
-            ++ " the counted path.  Re-run with --no-fast-reduce for complete"
-            ++ " numbers; it is slower, but the counts are the point."
-            | fast ]
+  requested <- PC.countersRequested
+  enabled   <- filterM (hasProfileOption . kOption) kinds
+  when (requested && not (null enabled)) $ do
+    opts       <- commandLineOptions
+    cs         <- liftIO PC.getCounters
+    checked    <- liftIO PC.getChecked
+    projectDir <- runProjectDir "."
+    tbl        <- moduleFileTable
+    let outFile  = fromMaybe "agda-counters.json" (optCountersFile opts)
+    listed     <- forM enabled $ \ k -> (k,) <$> rows projectDir tbl (kGet k cs)
+    let notes    = concat
+          [ [ "Counts of forced evaluations, per definition, most counted first."
+            , "Only the modules listed as checked were type-checked in this run;"
+              ++ " the rest were loaded from interfaces and contributed nothing"
+              ++ " of their own checking.  Compare two reports only when they"
+              ++ " checked the same modules." ]
           , case done of
               Complete -> []
               Incomplete why ->
@@ -111,22 +151,26 @@ writeProfileCounters done = do
               Complete       -> []
               Incomplete why -> withComma $ jField 1 "stoppedBy" (JStr why)
           , withComma $ jField 1 "note" (JStr (unwords notes))
+          , withComma $ jField 1 "checkedModules" (JArr (map JStr checked))
           ]
         put $ indent 1 ++ jsonString "counters" ++ ": {"
-        let kind (i, k) = do
+        let kind (i, (k, rs)) = do
               put $ (if i == (0 :: Int) then "\n" else ",\n")
                 ++ indent 2 ++ jsonString (kKey k) ++ ": ["
-              n <- streamArray put 3 (pure . rowJ) (rows k)
+              n <- streamArray put 3 (pure . rowJ) rs
               put $ (if n == 0 then "" else "\n" ++ indent 2) ++ "]"
-        mapM_ kind (zip [0 ..] enabled)
+        mapM_ kind (zip [0 ..] listed)
         put $ "\n" ++ indent 1 ++ "}\n}\n"
       ReportText -> do
         put $ unlines notes
-        mapM_ (\ k -> put $ unlines $
-                 ("" : (kTitle k ++ " (" ++ show (length (rows k)) ++ ")")
-                   : [ "  " ++ padLeft 10 (show c) ++ "  " ++ prettyShow q
-                     | (q, c) <- rows k ]))
-              enabled
+        put $ unlines $
+          "" : ("checked modules (" ++ show (length checked) ++ ")")
+             : map ("  " ++) checked
+        forM_ listed $ \ (k, rs) -> put $ unlines $
+          "" : (kTitle k ++ " (" ++ show (length rs) ++ ")")
+             : [ "  " ++ padLeft 10 (show (rCount r)) ++ "  " ++ rName r
+                 ++ (if null (rRange r) then "" else "  " ++ rRange r)
+               | r <- rs ]
     -- A file nobody knows was written is a file nobody opens.
     unless (outFile == "-") $ alwaysReportSLn "" 1 $
       "Profile counters" ++ (case done of
@@ -134,7 +178,11 @@ writeProfileCounters done = do
         Incomplete why -> " (INCOMPLETE: " ++ why ++ ")")
       ++ " written to " ++ outFile
   where
-    rowJ (q, c) = JObj [ ("name", JStr (prettyShow q)), ("count", JNum c) ]
+    rowJ r = JObj $ concat
+      [ [ ("name", JStr (rName r)), ("count", JNum (rCount r)) ]
+      , [ ("source", JStr s) | Just s <- [rSource r] ]
+      , [ ("range", JStr (rRange r)) | not (null (rRange r)) ]
+      ]
     padLeft k s = replicate (max 0 (k - length s)) ' ' ++ s
 
 -- | Run the whole session, writing the counters when it ends, whether it

@@ -1,9 +1,6 @@
--- The per-definition counters of --profile=reduction, written as text, with the fast evaluator left on so the report says what it misses.
---
--- The numbers are predicted by hand, which is the point of the test: `loop
--- five` unfolds `loop` once for each of n = 5, 4, 3, 2, 1, 0, so exactly 6
--- times, and `five` exactly once.  The fast evaluator is off because it does
--- not go through the counted path.
+-- The per-definition counters of --profile=reduction, written as text, with
+-- the fast evaluator left on.  It is counted too, so the numbers predicted by
+-- hand in ProfileCountersJSON must come out here as well: `loop` 6, `five` 1.
 module ProfileCountersText where
 
 data Nat : Set where

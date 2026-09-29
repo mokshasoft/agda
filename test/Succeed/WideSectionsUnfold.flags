@@ -1,0 +1,1 @@
+--wide-sections=1 --wide-file=- --wide-format=text --profile=reduction --counters-file=- --counters-format=text

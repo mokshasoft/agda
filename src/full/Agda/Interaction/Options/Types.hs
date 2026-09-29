@@ -126,10 +126,12 @@ data CommandLineOptions = Options
       --   stdout.
   , optWideFormat            :: ReportFormat
       -- ^ Output format for it (@--wide-format=json|text@).
-  , optCountersFile          :: FilePath
+  , optCountersFile          :: Maybe FilePath
       -- ^ Where to write the per-definition counters collected by
       --   @--profile=reduction|conversion@
-      --   (@--counters-file@); @-@ for stdout.
+      --   (@--counters-file@); @-@ for stdout.  'Nothing' when not given,
+      --   which is not the same as the default file: giving it is what asks
+      --   for per-definition conversion counts under @--profile=conversion@.
   , optCountersFormat        :: ReportFormat
       -- ^ Output format for them (@--counters-format=json|text@).
   , optSearchUnanchored      :: Bool

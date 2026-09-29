@@ -7,7 +7,7 @@ module Agda.Main where
 import Prelude hiding (null)
 
 import qualified Control.Exception as E
-import Control.Monad          ( forM_, void )
+import Control.Monad          ( void )
 import Control.Monad.Except   ( MonadError(..), ExceptT(..), runExceptT )
 import Control.Monad.IO.Class ( MonadIO(..) )
 
@@ -38,9 +38,6 @@ import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Errors
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 import Agda.TypeChecking.ProfileReport (withCountersOnAbort)
-import qualified Agda.Utils.ProfileOptions as Profile
-import qualified Data.HashMap.Strict as HMap
-import qualified Agda.Utils.List1 as List1
 import Agda.TypeChecking.Errors
 import Agda.TypeChecking.Warnings
 import Agda.TypeChecking.Pretty

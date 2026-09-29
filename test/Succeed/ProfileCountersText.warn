@@ -1,4 +1,11 @@
 Counts of forced evaluations, per definition, most counted first.
-The unfolding counts exclude the fast evaluator, which handles most reduction by default and does not go through the counted path.  Re-run with --no-fast-reduce for complete numbers; it is slower, but the counts are the point.
+Only the modules listed as checked were type-checked in this run; the rest were loaded from interfaces and contributed nothing of their own checking.  Compare two reports only when they checked the same modules.
 
-unfoldings (0)
+checked modules (1)
+  ProfileCountersText
+
+unfoldings (4)
+         141  ProfileCountersText.Nat  ProfileCountersText.agda:6.6-9
+          20  ProfileCountersText._≡_  ProfileCountersText.agda:10.6-9
+           6  ProfileCountersText.loop  ProfileCountersText.agda:16.1-5
+           1  ProfileCountersText.five  ProfileCountersText.agda:13.1-5

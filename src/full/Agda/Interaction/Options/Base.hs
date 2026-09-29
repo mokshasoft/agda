@@ -710,7 +710,7 @@ defaultOptions = Options
   , optWideSections          = Nothing
   , optWideFile              = "agda-wide-sections.json"
   , optWideFormat            = ReportJSON
-  , optCountersFile          = "agda-counters.json"
+  , optCountersFile          = Nothing
   , optCountersFormat        = ReportJSON
   }
 
@@ -1249,7 +1249,7 @@ wideSectionsFlag s o = case reads s of
     "--wide-sections expects a non-negative number, got: " ++ s
 
 countersFileFlag :: FilePath -> Flag CommandLineOptions
-countersFileFlag s o = return $ o { optCountersFile = s }
+countersFileFlag s o = return $ o { optCountersFile = Just s }
 
 countersFormatFlag :: String -> Flag CommandLineOptions
 countersFormatFlag s o = do
@@ -1542,7 +1542,9 @@ standardOptions =
     , Option []     ["counters-file"] (ReqArg countersFileFlag "PATH")
                     ("where to write the per-definition counters collected by\n" ++
                      "--profile=reduction (unfoldings) and --profile=conversion (conversion\n" ++
-                     "checks), or - for stdout. Defaults to a file (agda-counters.json). Every counted\n" ++
+                     "checks), or - for stdout. Defaults to a file (agda-counters.json).\n" ++
+                     "--profile=reduction writes them whether or not this is given;\n" ++
+                     "--profile=conversion counts per definition only when it is. Every counted\n" ++
                      "definition is listed, most counted first. If checking fails, runs\n" ++
                      "out of heap or is interrupted, the counters are still written,\n" ++
                      "marked incomplete.")

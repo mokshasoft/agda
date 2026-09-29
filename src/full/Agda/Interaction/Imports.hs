@@ -88,7 +88,9 @@ import Agda.TypeChecking.ASTDump (writeASTDump)
 import Agda.TypeChecking.DeadCode
 import Agda.TypeChecking.DuplicateTypes (findDuplicates)
 import Agda.TypeChecking.TypeSearch (searchType)
-import Agda.TypeChecking.AnalysisOutput (Completeness (Complete))
+import Agda.TypeChecking.AnalysisOutput
+  ( Completeness (Complete), analysisProjectDir, runProjectDir, setMainSourceDir )
+import qualified Agda.TypeChecking.ProfileCounters as PC
 import Agda.TypeChecking.WideSections (reportWideSections, withWideSectionsOnAbort)
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
@@ -132,33 +134,6 @@ ignoreInterfaces = optIgnoreInterfaces <$> commandLineOptions
 
 ignoreAllInterfaces :: HasOptions m => m Bool
 ignoreAllInterfaces = optIgnoreAllInterfaces <$> commandLineOptions
-
--- | The root of the git repository containing the given directory, if any.
---
---   This is what delimits "the project" for @--dead-code@ and @--write-ast@:
---   a repository is the unit the user can actually edit, whereas an
---   @.agda-lib@ may sit in a subdirectory or be absent altogether.
---   A @.git@ entry may be a directory or, in a worktree or submodule, a file.
-gitRepoRoot :: FilePath -> IO (Maybe FilePath)
-gitRepoRoot = go (256 :: Int)
-  where
-    go 0 _   = pure Nothing
-    go n dir = do
-      let dotGit = dir </> ".git"
-      found <- orM [ doesDirectoryExist dotGit, doesFileExist dotGit ]
-      if found then pure (Just dir) else do
-        let up = takeDirectory dir
-        if up == dir then pure Nothing else go (n - 1) up
-
--- | Directory delimiting the project for the reachability analyses:
---   the enclosing git repository, else the @.agda-lib@ location, else the
---   source file's own directory.
-analysisProjectDir :: FilePath -> TCM FilePath
-analysisProjectDir srcDir = do
-  mGit <- liftIO $ gitRepoRoot srcDir
-  case mGit of
-    Just root -> pure root
-    Nothing   -> fromMaybe srcDir <$> libToTCM (findProjectRoot srcDir)
 
 -- | Whether to write interface files (@.agdai@)
 
@@ -1220,10 +1195,17 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
                    reportWarningsForModule mname $ tcWarnings classified
                    when (null (nonFatalErrors classified)) $ chaseMsg "Finished" mname Nothing)
 
+  -- Every report of the run is scoped by the main module's project; see
+  -- 'runProjectDir'.
+  when (isMain /= NotMainInterface) $ liftIO $ setMainSourceDir (takeDirectory fp)
+  -- Checked rather than loaded from an interface, so its own checking
+  -- contributes to the counters; the report lists these.
+  whenM PC.countersRequested $ liftIO $ PC.noteChecked (prettyShow mname)
+
   -- Inside 'withMsgs', so the report is written before the stop is.
   withMsgs $
     withWideSectionsOnAbort (isMain /= NotMainInterface)
-      (analysisProjectDir (takeDirectory fp)) $
+      (runProjectDir (takeDirectory fp)) $
     Bench.billTo [Bench.TopModule mname] $
     localTC (\ e -> e { envCurrentPath = Just sfi }) do
 

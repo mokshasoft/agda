@@ -75,7 +75,8 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          SearchTypeInstance SearchTypePrefix SearchTypeRanking \
          SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff \
          SearchTypeHigherOrder SearchTypeLimit WideSections WideSectionsJSON \
-         ProfileCountersJSON ProfileCountersText; do
+         ProfileCountersJSON ProfileCountersText ProfileConversionAlone \
+         WideSectionsUnfold; do
   run_succeed $t
 done
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done

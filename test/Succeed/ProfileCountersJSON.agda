@@ -2,8 +2,8 @@
 --
 -- The numbers are predicted by hand, which is the point of the test: `loop
 -- five` unfolds `loop` once for each of n = 5, 4, 3, 2, 1, 0, so exactly 6
--- times, and `five` exactly once.  The fast evaluator is off because it does
--- not go through the counted path.
+-- times, and `five` exactly once.  The fast evaluator is off, so this checks the
+-- slow evaluator's count; ProfileCountersText checks the fast one's.
 module ProfileCountersJSON where
 
 data Nat : Set where

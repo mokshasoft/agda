@@ -19,6 +19,10 @@ module Agda.TypeChecking.AnalysisOutput
   , stateOfErr
     -- * Naming
   , defKind
+    -- * The project
+  , analysisProjectDir
+  , setMainSourceDir
+  , runProjectDir
     -- * Paths and ranges
   , relativeTo
   , trustedRange
@@ -43,20 +47,26 @@ module Agda.TypeChecking.AnalysisOutput
 import Control.Monad.Except (catchError, throwError)
 import Control.Monad.IO.Class (liftIO)
 
+import Data.IORef
 import Data.List (stripPrefix)
+import Data.Maybe (fromMaybe)
 
-import System.FilePath (makeRelative, normalise)
+import System.Directory (doesDirectoryExist, doesFileExist)
+import System.FilePath ((</>), makeRelative, normalise, takeDirectory)
 import System.IO
   ( BufferMode (BlockBuffering), IOMode (WriteMode)
   , hClose, hPutStr, hSetBuffering, hSetEncoding, openFile, stdout, utf8 )
+import System.IO.Unsafe (unsafePerformIO)
 
 import Agda.Syntax.Common.Pretty (prettyShow)
 import Agda.Syntax.Position (HasRange, getRange, rangeFile, rangeFilePath)
 
+import Agda.Interaction.Library (findProjectRoot)
 import Agda.TypeChecking.DeadCode (pathInProject)
 import Agda.TypeChecking.Monad
 
 import Agda.Utils.FileName (filePath)
+import Agda.Utils.Monad (orM)
 import qualified Agda.Utils.Maybe.Strict as Strict
 
 ---------------------------------------------------------------------------
@@ -135,6 +145,58 @@ defKind = \case
   Constructor{}      -> "constructor"
   Primitive{}        -> "primitive"
   PrimitiveSort{}    -> "primitive-sort"
+
+---------------------------------------------------------------------------
+-- * The project
+---------------------------------------------------------------------------
+
+-- | The root of the git repository containing the given directory, if any.
+--
+--   This is what delimits "the project" for @--dead-code@ and @--write-ast@:
+--   a repository is the unit the user can actually edit, whereas an
+--   @.agda-lib@ may sit in a subdirectory or be absent altogether.
+--   A @.git@ entry may be a directory or, in a worktree or submodule, a file.
+gitRepoRoot :: FilePath -> IO (Maybe FilePath)
+gitRepoRoot = go (256 :: Int)
+  where
+    go 0 _   = pure Nothing
+    go n dir = do
+      let dotGit = dir </> ".git"
+      found <- orM [ doesDirectoryExist dotGit, doesFileExist dotGit ]
+      if found then pure (Just dir) else do
+        let up = takeDirectory dir
+        if up == dir then pure Nothing else go (n - 1) up
+
+-- | Directory delimiting the project for the reachability analyses:
+--   the enclosing git repository, else the @.agda-lib@ location, else the
+--   source file's own directory.
+analysisProjectDir :: FilePath -> TCM FilePath
+analysisProjectDir srcDir = do
+  mGit <- liftIO $ gitRepoRoot srcDir
+  case mGit of
+    Just root -> pure root
+    Nothing   -> fromMaybe srcDir <$> libToTCM (findProjectRoot srcDir)
+
+-- | The directory of the run's main module.  Set when checking of the main
+--   module starts; see 'runProjectDir'.
+{-# NOINLINE mainSourceDir #-}
+mainSourceDir :: IORef (Maybe FilePath)
+mainSourceDir = unsafePerformIO $ newIORef Nothing
+
+setMainSourceDir :: FilePath -> IO ()
+setMainSourceDir = writeIORef mainSourceDir . Just
+
+-- | The project of the run: the one its main module is in.
+--
+--   A report written when an imported module stops is taken inside that
+--   module, whose own directory may delimit a different project -- a
+--   library's, or a subdirectory when there is neither a repository nor an
+--   @.agda-lib@.  Scoping every report by the main module is what makes a
+--   partial report cover the same sections as a complete one.  The argument
+--   is used when no main module has been recorded.
+runProjectDir :: FilePath -> TCM FilePath
+runProjectDir fallback =
+  analysisProjectDir . fromMaybe fallback =<< liftIO (readIORef mainSourceDir)
 
 ---------------------------------------------------------------------------
 -- * Paths and ranges

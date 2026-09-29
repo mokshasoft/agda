@@ -58,6 +58,16 @@
 --   cost is ranked as width times the number of definitions.  That is a count
 --   of binders written by the elaborator that no one wrote in the source, not
 --   a measurement of time; it says where to look, not how long it will take.
+--
+--   == With @--profile=reduction@
+--
+--   The static numbers say what a section created; they do not say whether
+--   it was then used.  When unfoldings are also being counted (see
+--   "Agda.TypeChecking.ProfileCounters"), each section is reported with the
+--   sum of its definitions' unfoldings, which is the dynamic half: a module
+--   application that copied sixty definitions, and how often those copies
+--   were then unfolded.  The ranking stays static, so that a report is the
+--   same whether or not reduction was counted.
 module Agda.TypeChecking.WideSections
   ( reportWideSections
   , withWideSectionsOnAbort
@@ -89,9 +99,11 @@ import Agda.TypeChecking.AnalysisOutput
 import Agda.TypeChecking.DeadCode
   ( moduleFileTable, sourceOfModule, pathInProject, allDefinitions )
 import Agda.TypeChecking.Monad
+import qualified Agda.TypeChecking.ProfileCounters as PC
 
 import Agda.Utils.Lens
 import Agda.Utils.Null
+import qualified Agda.Utils.ProfileOptions as Profile
 import Agda.Utils.Size (size)
 
 ---------------------------------------------------------------------------
@@ -113,6 +125,8 @@ data Wide = Wide
       --   off a copy.  See 'copiedFrom'.
   , wFirst  :: Maybe QName
       -- ^ The definition in it that comes first in the source.  See 'location'.
+  , wUnfold :: Maybe Int
+      -- ^ Unfoldings of its definitions, summed, when they were counted.
   }
 
 cost :: Wide -> Int
@@ -126,8 +140,10 @@ cost w = wWidth w * wDefs w
 --   lifts nothing over its context; that is most parameterised modules whose
 --   members all live in submodules, and every @where@ block that only opens
 --   something.
-collect :: FilePath -> Int -> TCM [Wide]
-collect projectDir n = do
+collect :: FilePath -> Int -> Bool -> TCM [Wide]
+collect projectDir n counted = do
+  unfolds  <- if counted then Just . PC.cUnfold <$> liftIO PC.getCounters
+                         else pure Nothing
   sig      <- getSignature
   imp      <- useTC stImports
   defs     <- allDefinitions
@@ -150,6 +166,8 @@ collect projectDir n = do
           , wFrom   = listToMaybe (mapMaybe copiedFrom copies)
           , wFirst  = listToMaybe $ sortOn (rStart' . getRange) $
                         filter (not . null . getRange) $ map defName ds
+          , wUnfold = unfolds <&> \ u ->
+                        sum [ HMap.findWithDefault 0 (defName d) u | d <- ds ]
           }
         | (m, sec) <- MapS.toList sections
         , let w = size (sec ^. secTelescope)
@@ -196,10 +214,11 @@ location projectDir w = case trustedRange projectDir (wSource w) (wModule w) of
 reportWideSections
   :: FilePath -> Int -> FilePath -> ReportFormat -> Completeness -> TCM ()
 reportWideSections projectDir n outFile format done = do
-  ranked <- collect projectDir n
+  counted <- hasProfileOption Profile.Reduction
+  ranked  <- collect projectDir n counted
   withOutputSink outFile $ \ put -> case format of
-    ReportJSON -> renderJSON put projectDir n done ranked
-    ReportText -> renderText put projectDir n done ranked
+    ReportJSON -> renderJSON put projectDir n done counted ranked
+    ReportText -> renderText put projectDir n done counted ranked
   -- A file nobody knows was written is a file nobody opens.
   unless (outFile == "-") $ alwaysReportSLn "" 1 $
     "Wide sections: " ++ show (length ranked) ++ " listed"
@@ -211,11 +230,15 @@ reportWideSections projectDir n outFile format done = do
 
 -- | The caveats, which are part of the output rather than documentation of
 --   it: a reader of the report needs them and has not read this module.
-caveat :: Completeness -> [String]
-caveat done = concat
+caveat :: Completeness -> Bool -> [String]
+caveat done counted = concat
   [ [ "cost = width x definitions: binders the elaborator wrote that the"
     , "source does not show.  A count, not a time."
     ]
+  , if not counted then [] else
+      [ "unfoldings = how often the section's definitions were unfolded during"
+      , "reduction, summed; see the --counters-file report for each definition."
+      ]
   , case done of
       Complete -> []
       Incomplete why ->
@@ -226,18 +249,20 @@ caveat done = concat
   ]
 
 renderText
-  :: Sink -> FilePath -> Int -> Completeness -> [Wide] -> TCM ()
-renderText put projectDir n done ranked = do
+  :: Sink -> FilePath -> Int -> Completeness -> Bool -> [Wide] -> TCM ()
+renderText put projectDir n done counted ranked = do
   put $ unlines $
     ("Wide sections (width >= " ++ show (max 1 n) ++ "): "
        ++ show (length ranked)) :
-    map ("  " ++) (caveat done)
+    map ("  " ++) (caveat done counted)
   unless (null ranked) $
     put $ unlines $
       (pad 8 "cost" ++ pad 7 "width" ++ pad 6 "defs" ++ pad 8 "copies"
+        ++ (if counted then pad 11 "unfoldings" else "")
         ++ "section") :
       [ pad 8 (show (cost w)) ++ pad 7 (show (wWidth w))
           ++ pad 6 (show (wDefs w)) ++ pad 8 copies
+          ++ maybe "" (pad 11 . show) (wUnfold w)
           ++ prettyShow (wModule w) ++ from ++ at
       | w <- ranked
       , let copies | wCopies w == 0 = "-"
@@ -250,8 +275,8 @@ renderText put projectDir n done ranked = do
       ]
 
 renderJSON
-  :: Sink -> FilePath -> Int -> Completeness -> [Wide] -> TCM ()
-renderJSON put projectDir n done ranked = do
+  :: Sink -> FilePath -> Int -> Completeness -> Bool -> [Wide] -> TCM ()
+renderJSON put projectDir n done counted ranked = do
   put $ unlines $ ("{" :) $ concat
     [ withComma $ jField 1 "threshold" (JNum (max 1 n))
     , withComma $ jField 1 "complete" $ JBool $ case done of
@@ -261,7 +286,7 @@ renderJSON put projectDir n done ranked = do
         Complete       -> []
         Incomplete why -> withComma $ jField 1 "stoppedBy" (JStr why)
     , withComma $ jField 1 "count" (JNum (length ranked))
-    , withComma $ jField 1 "note" (JStr (oneLine (unlines (caveat done))))
+    , withComma $ jField 1 "note" (JStr (oneLine (unlines (caveat done counted))))
     ]
   put $ indent 1 ++ jsonString "sections" ++ ": ["
   k <- streamArray put 2 (pure . wideJ) ranked
@@ -274,6 +299,7 @@ renderJSON put projectDir n done ranked = do
         , ("definitions", JNum (wDefs w))
         , ("copies",      JNum (wCopies w))
         ]
+      , [ ("unfoldings", JNum u) | Just u <- [wUnfold w] ]
       , [ ("copiedFrom", JStr (prettyShow o)) | Just o <- [wFrom w] ]
       , [ ("source", JStr (relativeTo projectDir s)) | Just s <- [wSource w] ]
       , case location projectDir w of
