@@ -4,17 +4,38 @@ Wide sections (width >= 1): 2
   unfoldings = how often the section's definitions were unfolded during
   reduction, summed; see the --counters-file report for each definition.
 cost    width  defs  copies  unfoldings section
-1       1      1     -       3          WideSectionsUnfold.Inner  WideSectionsUnfold.agda:15.8-13
-1       1      1     1       1          WideSectionsUnfold._.M = WideSectionsUnfold.Inner  WideSectionsUnfold.agda:23.12-13
+1       1      1     -       3          WideSectionsUnfold.Inner  WideSectionsUnfold.agda:17.8-13
+1       1      1     1       1          WideSectionsUnfold._.M = WideSectionsUnfold.Inner  WideSectionsUnfold.agda:25.12-13
 Counts of forced evaluations, per definition, most counted first.
-Only the modules listed as checked were type-checked in this run; the rest were loaded from interfaces and contributed nothing of their own checking.  Compare two reports only when they checked the same modules.
+Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
+The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.
 
-checked modules (1)
+counted modules (1)
   WideSectionsUnfold
 
 unfoldings (5)
-         166  WideSectionsUnfold.Nat  WideSectionsUnfold.agda:8.6-9
-          20  WideSectionsUnfold._≡_  WideSectionsUnfold.agda:12.6-9
-           3  WideSectionsUnfold.Inner.add  WideSectionsUnfold.agda:16.3-6
-           1  WideSectionsUnfold._.M.add  WideSectionsUnfold.agda:23.12-13
-           1  WideSectionsUnfold.f  WideSectionsUnfold.agda:20.1-2
+         166  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+          20  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+           3  WideSectionsUnfold.Inner.add  function  WideSectionsUnfold.agda:18.3-6
+           1  WideSectionsUnfold._.M.add  function  WideSectionsUnfold.agda:25.12-13
+           1  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
+
+unfoldings by the definition being checked (6)
+          57  WideSectionsUnfold.Inner.add  function  WideSectionsUnfold.agda:18.3-6
+                      57  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+          55  WideSectionsUnfold.test  function  WideSectionsUnfold.agda:27.1-5
+                      38  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+                      13  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+                       3  WideSectionsUnfold.Inner.add  function  WideSectionsUnfold.agda:18.3-6
+                       1  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
+          36  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
+                      35  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+                       1  WideSectionsUnfold._.M.add  function  WideSectionsUnfold.agda:25.12-13
+          19  (no definition)
+                      16  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+                       3  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+          16  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+                      12  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+                       4  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+           8  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+                       8  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9

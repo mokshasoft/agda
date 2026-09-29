@@ -42,11 +42,26 @@
 --     the reduction counters that is the intended reading: work not forced is
 --     work not done.
 --
---   [They are process-global.]  As with the benchmarking counters, every
---     module checked in the process contributes, including imported modules
---     that had no up-to-date interface.  So which modules were checked is
---     recorded too ('noteChecked'): two reports are comparable only when
---     they checked the same modules.
+--   [They count the project's checking, of anything.]  Ticks count only
+--     while a module of the project is being checked ('envProfileCounting'),
+--     so a library re-checked for want of an up-to-date interface does not
+--     add the work of checking itself.  What is unfolded is counted wherever
+--     it is defined: a definition in the project that forces a library
+--     function thousands of times shows up, often only, as that library
+--     function's count.
+--
+--   [They say who caused them.]  Each unfolding is also attributed to the
+--     definition whose checking caused it ('envCheckingDefinition'), since a
+--     count on a library function says what was hot but not which line of
+--     the project made it so.  Work done outside any one definition -- a
+--     module application, termination checking of a mutual block -- is
+--     attributed to no definition.
+--
+--   [They are process-global.]  As with the benchmarking counters, one
+--     process accumulates across everything it checks.  Which project
+--     modules were checked rather than loaded from an interface is recorded
+--     ('noteChecked'): two reports are comparable only when they checked the
+--     same modules.
 --
 --   [They are not synchronised.]  Concurrent ticks could in principle lose an
 --     increment.  Agda's reduction is single-threaded, and a counter is a
@@ -57,6 +72,7 @@ module Agda.TypeChecking.ProfileCounters
   , getCounters
   , countersRequested
     -- * Ticking
+  , Cause
   , tickUnfold
   , countUnfold
   , tickConversion
@@ -84,7 +100,7 @@ import qualified Agda.Utils.ProfileOptions as Profile
 -- * The store
 ---------------------------------------------------------------------------
 
--- | One map per counter, all keyed by the definition the number is about.
+-- | One map per counter, keyed by the definition the number is about.
 --
 --   A counter is added here when something ticks it, not before: a slot
 --   nothing fills would be reported as "measured, nothing found".
@@ -93,10 +109,16 @@ data Counters = Counters
       -- ^ Times a definition's body was unfolded during reduction.
   , cConv     :: !(HMap.HashMap QName Int)
       -- ^ Times a definition's head took part in a conversion check.
+  , cCaused   :: !(HMap.HashMap Cause (HMap.HashMap QName Int))
+      -- ^ The unfoldings again, by the definition whose checking caused
+      --   them: cause, then what was unfolded.
   }
 
+-- | The definition being checked when a tick fired, if any.
+type Cause = Maybe QName
+
 emptyCounters :: Counters
-emptyCounters = Counters HMap.empty HMap.empty
+emptyCounters = Counters HMap.empty HMap.empty HMap.empty
 
 -- | The counters.  Global because the hot hooks run in 'ReduceM', which is
 --   pure; see the module header.
@@ -155,21 +177,25 @@ addTo
   -> QName -> Int -> Counters -> Counters
 addTo get set q n c = set (HMap.insertWith (+) q n (get c)) c
 
-incUnfold :: QName -> Counters -> Counters
-incUnfold q = addTo cUnfold (\ m c -> c { cUnfold = m }) q 1
+incUnfold :: Cause -> QName -> Counters -> Counters
+incUnfold by q c0 = c { cCaused = HMap.alter (Just . inner) by (cCaused c) }
+  where
+    c = addTo cUnfold (\ m c' -> c' { cUnfold = m }) q 1 c0
+    inner = maybe (HMap.singleton q 1) (HMap.insertWith (+) q 1)
 
 -- | A definition's body was unfolded.  §4.1: the direct measurement of
 --   \"evaluated N times instead of once\", and the number that distinguishes
 --   an expensive definition from a cheap one in a hot loop -- which demand
---   opposite fixes.
-tickUnfold :: Monad m => QName -> m ()
-tickUnfold q = bumpM (incUnfold q)
+--   opposite fixes.  The caller checks 'envProfileCounting' and passes
+--   'envCheckingDefinition' as the cause.
+tickUnfold :: Monad m => Cause -> QName -> m ()
+tickUnfold by q = bumpM (incUnfold by q)
 
 -- | 'tickUnfold' for the fast evaluator, whose machine runs in 'ST': the
 --   tick fires when the returned value is forced, which for the next machine
 --   step is when the machine takes it.
-countUnfold :: QName -> a -> a
-countUnfold q = bump (incUnfold q)
+countUnfold :: Cause -> QName -> a -> a
+countUnfold by q = bump (incUnfold by q)
 
 -- | A definition's head took part in a conversion check.  §4.6: the aggregate
 --   tick already exists in "Agda.TypeChecking.Conversion"; only the key was
@@ -182,9 +208,9 @@ tickConversion q = bumpM (addTo cConv (\ m c -> c { cConv = m }) q 1)
 -- * Which modules were checked
 ---------------------------------------------------------------------------
 
--- | The modules type-checked in this process, as opposed to loaded from an
---   interface.  Only those contribute counts of their own checking.  Kept by
---   printed name, which is how the report lists them.
+-- | The project modules type-checked in this process, as opposed to loaded
+--   from an interface.  Only those contribute counts.  Kept by printed name,
+--   which is how the report lists them.
 checked :: IORef (Set.Set String)
 checked = unsafePerformIO $ newIORef Set.empty
 {-# NOINLINE checked #-}

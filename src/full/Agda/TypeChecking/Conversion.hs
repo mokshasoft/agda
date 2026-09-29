@@ -181,8 +181,9 @@ compareAs cmp a u v = do
     tick "compare"
     -- The aggregate tick above says conversion is hot; these say whose.  Both
     -- heads are counted: a comparison is work done on behalf of each.  Only
-    -- when the counters report was asked for; see 'countersRequested'.
-    whenM countersRequested $
+    -- when the counters report was asked for ('countersRequested'), and only
+    -- while checking the project ('envProfileCounting').
+    whenM (and2M countersRequested (asksTC envProfileCounting)) $
       mapM_ tickConversion $ conversionHeads u ++ conversionHeads v
 
   -- OLD CODE, traverses the *full* terms u v at each step, even if they

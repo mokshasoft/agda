@@ -76,42 +76,86 @@ kinds =
   , Kind "conversionChecks" "conversion checks" Profile.Conversion PC.cConv
   ]
 
--- | One listed definition.
-data Row = Row
-  { rName   :: String
-  , rCount  :: Int
-  , rSource :: Maybe FilePath
+-- | How a report names a definition.
+data Desc = Desc
+  { dName   :: String
+  , dKind   :: String
+      -- ^ Empty when the definition is not in the signature.
+  , dSource :: Maybe FilePath
       -- ^ Relative to the project, when inside it.
-  , rRange  :: String
+  , dRange  :: String
       -- ^ Empty when the name carries no range that can be trusted.
   }
 
--- | Most counted first.  Ties break on name, then on source and range, so
---   that two runs order the same rows the same way: never on anything
---   allocation-ordered, since that shifts under unrelated edits.
+-- | Describe every definition named.
 --
 --   The range is the definition's, read off the signature.  The key a count
 --   is stored under is whichever occurrence of the name was ticked first,
 --   and a name's range is that of the occurrence -- a use site, not where
 --   the definition is.
-rows :: FilePath -> ModuleFileTable -> HMap.HashMap QName Int -> TCM [Row]
-rows projectDir tbl m = do
-  defined <- forM (HMap.toList m) $ \ (q, c) ->
-    (, c) . either (const q) defName <$> getConstInfo' q
-  pure $ sortOn (\ r -> (Down (rCount r), rName r, rSource r, rRange r))
-    [ Row { rName   = prettyShow q
-          , rCount  = c
-          , rSource = relativeTo projectDir <$> src
-          , rRange  = trustedRange projectDir src q
-          }
-    | (q, c) <- defined
-    , let src = MapS.findWithDefault Nothing (qnameModule q) sources
-    ]
+--
+--   The kind is part of the description because the counts mix kinds: a
+--   datatype or a postulate is "unfolded" whenever reduction meets it, which
+--   is cheap and frequent, and a reader filtering for functions needs to be
+--   able to.
+describeAll
+  :: FilePath -> ModuleFileTable -> [QName] -> TCM (HMap.HashMap QName Desc)
+describeAll projectDir tbl qs = fmap HMap.fromList $ forM qs $ \ q0 -> do
+  def <- either (const Nothing) Just <$> getConstInfo' q0
+  let q   = maybe q0 defName def
+      src = MapS.findWithDefault Nothing (qnameModule q) sources
+  pure (q0, Desc
+    { dName   = prettyShow q
+    , dKind   = maybe "" (defKind . theDef) def
+    , dSource = relativeTo projectDir <$> src
+    , dRange  = trustedRange projectDir src q
+    })
   where
     -- Looked up once per module rather than once per name: a module
     -- lookup scans the whole file table.
     sources = MapS.fromList
-      [ (x, sourceOfModule tbl x) | x <- map qnameModule (HMap.keys m) ]
+      [ (x, sourceOfModule tbl x) | x <- map qnameModule qs ]
+
+-- | One listed definition.
+data Row = Row
+  { rDesc  :: Desc
+  , rCount :: Int
+  }
+
+-- | Most counted first.  Ties break on name, then on source and range, so
+--   that two runs order the same rows the same way: never on anything
+--   allocation-ordered, since that shifts under unrelated edits.
+rows :: HMap.HashMap QName Desc -> HMap.HashMap QName Int -> [Row]
+rows descs m = sortOn rowKey
+  [ Row (descs HMap.! q) c | (q, c) <- HMap.toList m ]
+
+rowKey :: Row -> (Down Int, String, Maybe FilePath, String)
+rowKey (Row d c) = (Down c, dName d, dSource d, dRange d)
+
+-- | The unfoldings caused by checking one definition, or by work done
+--   outside any definition ('Nothing').
+data CauseRow = CauseRow
+  { crCause :: Maybe Desc
+  , crTotal :: Int
+  , crTop   :: [Row]
+      -- ^ What it unfolded most, at most 'topUnfolded' of them.
+  }
+
+-- | How many of a cause's unfolded definitions are listed.  All of them
+--   would multiply the report by the number of causes.
+topUnfolded :: Int
+topUnfolded = 5
+
+causeRows
+  :: HMap.HashMap QName Desc -> HMap.HashMap PC.Cause (HMap.HashMap QName Int)
+  -> [CauseRow]
+causeRows descs m = sortOn key
+  [ CauseRow (fmap (descs HMap.!) by) (sum inner)
+      (take topUnfolded (rows descs inner))
+  | (by, inner) <- HMap.toList m
+  ]
+  where
+    key r = (Down (crTotal r), fmap dName (crCause r), fmap dSource (crCause r))
 
 -- | Write the counters of every kind whose profile option is on, when the
 --   report was asked for at all ('PC.countersRequested').  Nothing is written
@@ -127,14 +171,27 @@ writeProfileCounters done = do
     checked    <- liftIO PC.getChecked
     projectDir <- runProjectDir "."
     tbl        <- moduleFileTable
-    let outFile  = fromMaybe "agda-counters.json" (optCountersFile opts)
-    listed     <- forM enabled $ \ k -> (k,) <$> rows projectDir tbl (kGet k cs)
-    let notes    = concat
+    byCause    <- hasProfileOption Profile.Reduction
+    -- Everything counted, and every definition that caused unfoldings.
+    let names = HMap.keys $ HMap.unions $
+          [ () <$ kGet k cs | k <- enabled ] ++
+          [ HMap.fromList [ (q, ()) | Just q <- HMap.keys (PC.cCaused cs) ]
+          | byCause ]
+    descs      <- describeAll projectDir tbl names
+    let outFile = fromMaybe "agda-counters.json" (optCountersFile opts)
+        listed  = [ (k, rows descs (kGet k cs)) | k <- enabled ]
+        causes  = [ causeRows descs (PC.cCaused cs) | byCause ]
+        notes   = concat
           [ [ "Counts of forced evaluations, per definition, most counted first."
-            , "Only the modules listed as checked were type-checked in this run;"
-              ++ " the rest were loaded from interfaces and contributed nothing"
-              ++ " of their own checking.  Compare two reports only when they"
-              ++ " checked the same modules." ]
+            , "Counted only while checking the modules of the project listed as"
+              ++ " counted; what their checking unfolded is counted wherever it is"
+              ++ " defined, library or not.  Compare two reports only when they"
+              ++ " counted the same modules." ]
+          , [ "The unfoldings are also listed by the definition whose checking"
+              ++ " caused them, each with the " ++ show topUnfolded ++ " definitions"
+              ++ " it unfolded most; work outside any definition (a module"
+              ++ " application, termination checking) has no name."
+            | byCause ]
           , case done of
               Complete -> []
               Incomplete why ->
@@ -151,26 +208,33 @@ writeProfileCounters done = do
               Complete       -> []
               Incomplete why -> withComma $ jField 1 "stoppedBy" (JStr why)
           , withComma $ jField 1 "note" (JStr (unwords notes))
-          , withComma $ jField 1 "checkedModules" (JArr (map JStr checked))
+          , withComma $ jField 1 "countedModules" (JArr (map JStr checked))
           ]
         put $ indent 1 ++ jsonString "counters" ++ ": {"
-        let kind (i, (k, rs)) = do
-              put $ (if i == (0 :: Int) then "\n" else ",\n")
-                ++ indent 2 ++ jsonString (kKey k) ++ ": ["
-              n <- streamArray put 3 (pure . rowJ) rs
+        let section :: Int -> String -> (a -> J) -> [a] -> TCM ()
+            section i key render xs = do
+              put $ (if i == 0 then "\n" else ",\n")
+                ++ indent 2 ++ jsonString key ++ ": ["
+              n <- streamArray put 3 (pure . render) xs
               put $ (if n == 0 then "" else "\n" ++ indent 2) ++ "]"
-        mapM_ kind (zip [0 ..] listed)
+        forM_ (zip [0 ..] listed) $ \ (i, (k, rs)) -> section i (kKey k) rowJ rs
+        forM_ causes $ section (length listed) "unfoldingsByCause" causeJ
         put $ "\n" ++ indent 1 ++ "}\n}\n"
       ReportText -> do
         put $ unlines notes
         put $ unlines $
-          "" : ("checked modules (" ++ show (length checked) ++ ")")
+          "" : ("counted modules (" ++ show (length checked) ++ ")")
              : map ("  " ++) checked
         forM_ listed $ \ (k, rs) -> put $ unlines $
           "" : (kTitle k ++ " (" ++ show (length rs) ++ ")")
-             : [ "  " ++ padLeft 10 (show (rCount r)) ++ "  " ++ rName r
-                 ++ (if null (rRange r) then "" else "  " ++ rRange r)
-               | r <- rs ]
+             : map (rowT 2) rs
+        forM_ causes $ \ crs -> put $ unlines $
+          "" : ("unfoldings by the definition being checked (" ++ show (length crs) ++ ")")
+             : concat
+               [ ("  " ++ padLeft 10 (show (crTotal cr)) ++ "  "
+                   ++ maybe "(no definition)" descT (crCause cr))
+                 : map (rowT 14) (crTop cr)
+               | cr <- crs ]
     -- A file nobody knows was written is a file nobody opens.
     unless (outFile == "-") $ alwaysReportSLn "" 1 $
       "Profile counters" ++ (case done of
@@ -178,11 +242,24 @@ writeProfileCounters done = do
         Incomplete why -> " (INCOMPLETE: " ++ why ++ ")")
       ++ " written to " ++ outFile
   where
-    rowJ r = JObj $ concat
-      [ [ ("name", JStr (rName r)), ("count", JNum (rCount r)) ]
-      , [ ("source", JStr s) | Just s <- [rSource r] ]
-      , [ ("range", JStr (rRange r)) | not (null (rRange r)) ]
+    descJ d = concat
+      [ [ ("name", JStr (dName d)) ]
+      , [ ("kind", JStr (dKind d)) | not (null (dKind d)) ]
+      , [ ("source", JStr s) | Just s <- [dSource d] ]
+      , [ ("range", JStr (dRange d)) | not (null (dRange d)) ]
       ]
+    rowJ (Row d c) = JObj $ descJ d ++ [ ("count", JNum c) ]
+    causeJ cr = JObj $ concat
+      [ maybe [ ("name", JNull) ] descJ (crCause cr)
+      , [ ("count", JNum (crTotal cr))
+        , ("unfoldedMost", JArr [ JObj [ ("name", JStr (dName d)), ("count", JNum c) ]
+                                | Row d c <- crTop cr ])
+        ]
+      ]
+    descT d = dName d
+      ++ (if null (dKind d)  then "" else "  " ++ dKind d)
+      ++ (if null (dRange d) then "" else "  " ++ dRange d)
+    rowT k (Row d c) = replicate k ' ' ++ padLeft 10 (show c) ++ "  " ++ descT d
     padLeft k s = replicate (max 0 (k - length s)) ' ' ++ s
 
 -- | Run the whole session, writing the counters when it ends, whether it

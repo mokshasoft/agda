@@ -249,7 +249,10 @@ checkDecl d = setCurrentRange d $ do
             , AllAreOpaque i
             )
           => QName -> i -> m a -> m a
-    check x i m = Bench.billTo [Bench.Definition x] $ do
+    -- The definition is also recorded for the profile counters, which
+    -- attribute the reduction checking it causes to it.
+    check x i m = Bench.billTo [Bench.Definition x] $
+                  localTC (\ e -> e { envCheckingDefinition = Just x }) $ do
       reportSDoc "tc.decl" 5 $ ("Checking" <+> prettyTCM x) <> "."
       reportSLn "tc.decl.abstract" 25 $ show $ anyIsAbstract i
       r <- checkMaybeAbstractly i m
@@ -922,6 +925,7 @@ checkTypeSignature' gtel (A.ScopedDecl scope ds) = do
   mapM_ (checkTypeSignature' gtel) ds
 checkTypeSignature' gtel (A.Axiom funSig i info mp x e) =
   Bench.billTo [Bench.Definition x] $
+  localTC (\ env -> env { envCheckingDefinition = Just x }) $
   Bench.billTo [Bench.Typing, Bench.TypeSig] $
     let abstr = case Info.defAccess i of
           PrivateAccess{}

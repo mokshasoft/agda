@@ -1,8 +1,10 @@
 -- --wide-sections with --profile=reduction: each section is also reported
 -- with how often its definitions were unfolded, summed.  The application M
--- copies Inner's `add` into f's where block.  Predicted by hand: the proof
--- unfolds `f` once and the copy `M.add` once, and the copy delegates to
--- `Inner.add` at 2, 1 and 0 -- so M reports 1 and Inner 3.
+-- copies Inner's `add` into f's where block.  Predicted by hand: a copy is
+-- inlined where it is used, so checking f's body unfolds `M.add` once and
+-- leaves `Inner.add` in its place; the proof then unfolds `f` once and
+-- `Inner.add` at 2, 1 and 0 -- so M reports 1 and Inner 3.  In the counters,
+-- `M.add` is attributed to f and `Inner.add` to test.
 module WideSectionsUnfold where
 
 data Nat : Set where

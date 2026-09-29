@@ -1198,16 +1198,25 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
   -- Every report of the run is scoped by the main module's project; see
   -- 'runProjectDir'.
   when (isMain /= NotMainInterface) $ liftIO $ setMainSourceDir (takeDirectory fp)
-  -- Checked rather than loaded from an interface, so its own checking
-  -- contributes to the counters; the report lists these.
-  whenM PC.countersRequested $ liftIO $ PC.noteChecked (prettyShow mname)
+  -- The profile counters count only while a module of the project is
+  -- checked: a library re-checked for want of an interface would otherwise
+  -- add the work of checking itself.  What the project's checking unfolds
+  -- is counted wherever it is defined.  The report lists the modules that
+  -- counted.
+  counting <- ifNotM PC.countersRequested (pure False) $ do
+    projectDir <- runProjectDir (takeDirectory fp)
+    pure $ pathInProject projectDir fp
+  when counting $ liftIO $ PC.noteChecked (prettyShow mname)
 
   -- Inside 'withMsgs', so the report is written before the stop is.
   withMsgs $
     withWideSectionsOnAbort (isMain /= NotMainInterface)
       (runProjectDir (takeDirectory fp)) $
     Bench.billTo [Bench.TopModule mname] $
-    localTC (\ e -> e { envCurrentPath = Just sfi }) do
+    localTC (\ e -> e { envCurrentPath        = Just sfi
+                      , envProfileCounting    = counting
+                      , envCheckingDefinition = Nothing
+                      }) do
 
     let onlyScope = isMain == MainInterface ScopeCheck
 

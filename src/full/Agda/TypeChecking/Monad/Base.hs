@@ -4156,6 +4156,14 @@ data TCEnv =
           , envTermCheckReducing :: Bool
                 -- ^ Are we currently trying to reduce away function calls using
                 --   non-recursive clauses during termination checking?
+          , envProfileCounting :: Bool
+                -- ^ Do the per-definition profile counters count here?  Off
+                --   while checking a module outside the project, so that a
+                --   library re-checked for want of an interface does not add
+                --   its own work.  See "Agda.TypeChecking.ProfileCounters".
+          , envCheckingDefinition :: Maybe QName
+                -- ^ The definition being checked, to which the profile
+                --   counters attribute the reduction its checking causes.
           }
     deriving (Generic)
 
@@ -4223,6 +4231,8 @@ initEnv = TCEnv { envContext             = []
                 , envSyntacticEqualityFuel  = Strict.Nothing
                 , envCurrentOpaqueId        = Nothing
                 , envTermCheckReducing      = False
+                , envProfileCounting        = True
+                , envCheckingDefinition     = Nothing
                 }
 
 class LensTCEnv a where

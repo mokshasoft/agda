@@ -854,14 +854,16 @@ reduceTm rEnv bEnv !constInfo normalisation =
     -- Per-definition unfolding counts (--profile=reduction). The option is
     -- read once per call of the machine, not once per step, so that the
     -- machine's hottest case pays one Bool test when the option is off.
-    countUnfolds = unReduceM (hasProfileOption Profile.Reduction) rEnv
+    countUnfolds = envProfileCounting (redEnv rEnv)
+                   && unReduceM (hasProfileOption Profile.Reduction) rEnv
+    cause        = envCheckingDefinition (redEnv rEnv)
     -- The slow evaluator counts in 'unfoldDefinitionStep'. A definition the
     -- machine hands to it ('COther') is counted there, so not here as well.
     -- The one exception is primErase, whose EraseK frame falls back to slow
     -- reduce when its arguments are not equal literals: that is counted twice.
     tickDef :: QName -> CompactDefn -> a -> a
     tickDef f def
-      | countUnfolds, not (isOther def) = countUnfold f
+      | countUnfolds, not (isOther def) = countUnfold cause f
       | otherwise                       = id
     isOther COther = True
     isOther _      = False

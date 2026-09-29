@@ -1,17 +1,42 @@
 Counts of forced evaluations, per definition, most counted first.
-Only the modules listed as checked were type-checked in this run; the rest were loaded from interfaces and contributed nothing of their own checking.  Compare two reports only when they checked the same modules.
+Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
+The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.
 INCOMPLETE: the run stopped (type error).  Every count is what had been counted when it stopped.
 
-checked modules (1)
+counted modules (1)
   ProfileCountersAbort
 
 unfoldings (6)
-         146  ProfileCountersAbort.Nat  ProfileCountersAbort.agda:6.6-9
-          20  ProfileCountersAbort._≡_  ProfileCountersAbort.agda:10.6-9
-           6  ProfileCountersAbort.Nat.suc  ProfileCountersAbort.agda:8.3-6
-           6  ProfileCountersAbort.loop  ProfileCountersAbort.agda:16.1-5
-           4  ProfileCountersAbort.Nat.zero  ProfileCountersAbort.agda:7.3-7
-           1  ProfileCountersAbort.five  ProfileCountersAbort.agda:13.1-5
+         146  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+          20  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+           6  ProfileCountersAbort.Nat.suc  constructor  ProfileCountersAbort.agda:8.3-6
+           6  ProfileCountersAbort.loop  function  ProfileCountersAbort.agda:16.1-5
+           4  ProfileCountersAbort.Nat.zero  constructor  ProfileCountersAbort.agda:7.3-7
+           1  ProfileCountersAbort.five  function  ProfileCountersAbort.agda:13.1-5
+
+unfoldings by the definition being checked (7)
+          51  ProfileCountersAbort.loop  function  ProfileCountersAbort.agda:16.1-5
+                      49  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+                       1  ProfileCountersAbort.Nat.suc  constructor  ProfileCountersAbort.agda:8.3-6
+                       1  ProfileCountersAbort.Nat.zero  constructor  ProfileCountersAbort.agda:7.3-7
+          48  ProfileCountersAbort.test  function  ProfileCountersAbort.agda:20.1-5
+                      20  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+                      13  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+                       6  ProfileCountersAbort.loop  function  ProfileCountersAbort.agda:16.1-5
+                       5  ProfileCountersAbort.Nat.suc  constructor  ProfileCountersAbort.agda:8.3-6
+                       3  ProfileCountersAbort.Nat.zero  constructor  ProfileCountersAbort.agda:7.3-7
+          41  ProfileCountersAbort.five  function  ProfileCountersAbort.agda:13.1-5
+                      41  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+          16  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+                      12  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+                       4  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+          14  (no definition)
+                      11  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+                       3  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+           8  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+                       8  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+           5  ProfileCountersAbort.bad  function  ProfileCountersAbort.agda:23.1-4
+                       5  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
 ProfileCountersAbort.agda:24.7-10: error: [UnequalTerms]
 Set₁ !=< Nat
 when checking that the expression Set has type Nat

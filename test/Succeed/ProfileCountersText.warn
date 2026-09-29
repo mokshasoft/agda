@@ -1,11 +1,31 @@
 Counts of forced evaluations, per definition, most counted first.
-Only the modules listed as checked were type-checked in this run; the rest were loaded from interfaces and contributed nothing of their own checking.  Compare two reports only when they checked the same modules.
+Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
+The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.
 
-checked modules (1)
+counted modules (1)
   ProfileCountersText
 
 unfoldings (4)
-         141  ProfileCountersText.Nat  ProfileCountersText.agda:6.6-9
-          20  ProfileCountersText._≡_  ProfileCountersText.agda:10.6-9
-           6  ProfileCountersText.loop  ProfileCountersText.agda:16.1-5
-           1  ProfileCountersText.five  ProfileCountersText.agda:13.1-5
+         141  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+          20  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+           6  ProfileCountersText.loop  function  ProfileCountersText.agda:16.1-5
+           1  ProfileCountersText.five  function  ProfileCountersText.agda:13.1-5
+
+unfoldings by the definition being checked (6)
+          49  ProfileCountersText.loop  function  ProfileCountersText.agda:16.1-5
+                      49  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+          41  ProfileCountersText.five  function  ProfileCountersText.agda:13.1-5
+                      41  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+          40  ProfileCountersText.test  function  ProfileCountersText.agda:20.1-5
+                      20  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+                      13  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+                       6  ProfileCountersText.loop  function  ProfileCountersText.agda:16.1-5
+                       1  ProfileCountersText.five  function  ProfileCountersText.agda:13.1-5
+          16  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+                      12  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+                       4  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+          14  (no definition)
+                      11  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+                       3  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+           8  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+                       8  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9

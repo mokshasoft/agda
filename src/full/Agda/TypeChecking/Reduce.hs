@@ -660,7 +660,9 @@ unfoldDefinitionStep v0 f es =
   -- already a value still counts, because the work of deciding that was done
   -- on f's behalf.  Counting only successful unfoldings would need a tick on
   -- every one of the branches below and would silently miss any added later.
-  whenProfile Profile.Reduction $ tickUnfold f
+  whenProfile Profile.Reduction $ do
+    env <- askTC
+    when (envProfileCounting env) $ tickUnfold (envCheckingDefinition env) f
   traceSDoc "tc.reduce" 90 ("unfoldDefinitionStep v0" <+> pretty v0) $ do
   info <- getConstInfo f
   rewr <- instantiateRewriteRules =<< getRewriteRulesFor f
