@@ -456,7 +456,9 @@ writeProfileCounters done = do
 --
 --   The sites still being checked when the run stopped are included with
 --   what they had cost so far, which is what a flame graph of a run that
---   died needs most.  Lines are sorted, so two runs diff.
+--   died needs most.  Lines are sorted, so two runs diff.  Each stack is
+--   rooted at the site's file, or, when a snapshot cannot tell it, its
+--   module.
 writeFolded
   :: FilePath -> PC.Counters -> HMap.HashMap ProfileSite Desc
   -> [CheckingFrame] -> [(Int64, Integer)] -> Integer -> Int64
@@ -468,8 +470,13 @@ writeFolded prefix cs sites stack nested nowTime now (timeOn, allocOn, allocNow,
                    , fromIntegral ((cfAllocStart f - now) - na) )
                  | (f, (na, nt)) <- zip stack nested ]
       paths    = HMap.fromList $ [ (last p, p) | (p, _, _) <- finished ++ running, not (null p) ]
+      -- The root is the file.  A snapshot cannot look up the file of a
+      -- module being checked in its own state (an import), so there the
+      -- root is the module, which groups the stacks the same way.
       stackOf p = intercalate ";" $
-        fromMaybe "(unknown file)" (dSource (sites HMap.! head p)) : map (dName . (sites HMap.!)) p
+        fromMaybe (prettyShow (either id qnameModule (siteAnchor (head p))))
+          (dSource (sites HMap.! head p))
+        : map (dName . (sites HMap.!)) p
       write :: String -> [(String, Integer)] -> TCM ()
       write measure ls = withOutputSink (prefix ++ "." ++ measure ++ ".folded") $ \ put ->
         put $ unlines [ s ++ " " ++ show v | (s, v) <- sort ls, v > 0 ]
