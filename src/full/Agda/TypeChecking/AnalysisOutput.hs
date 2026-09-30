@@ -19,6 +19,8 @@ module Agda.TypeChecking.AnalysisOutput
   , stateOfErr
     -- * Naming
   , defKind
+  , siteLabel
+  , siteAnchor
     -- * The project
   , analysisProjectDir
   , setMainSourceDir
@@ -47,17 +49,22 @@ module Agda.TypeChecking.AnalysisOutput
 import Control.Monad.Except (catchError, throwError)
 import Control.Monad.IO.Class (liftIO)
 
+import Control.Concurrent (myThreadId)
+import qualified Control.Exception as E
+
+import Data.Char (isDigit)
 import Data.IORef
 import Data.List (stripPrefix)
 import Data.Maybe (fromMaybe)
 
-import System.Directory (doesDirectoryExist, doesFileExist)
+import System.Directory (doesDirectoryExist, doesFileExist, removeFile, renameFile)
 import System.FilePath ((</>), makeRelative, normalise, takeDirectory)
 import System.IO
   ( BufferMode (BlockBuffering), IOMode (WriteMode)
   , hClose, hPutStr, hSetBuffering, hSetEncoding, openFile, stdout, utf8 )
 import System.IO.Unsafe (unsafePerformIO)
 
+import Agda.Syntax.Abstract.Name (ModuleName, QName)
 import Agda.Syntax.Common.Pretty (prettyShow)
 import Agda.Syntax.Position (HasRange, getRange, rangeFile, rangeFilePath)
 
@@ -77,23 +84,36 @@ import qualified Agda.Utils.Maybe.Strict as Strict
 --   'String' is what lets a long listing be rendered one entry at a time.
 type Sink = String -> TCM ()
 
+--   A file is written under a temporary name and renamed into place when
+--   complete, so a run killed mid-write leaves the previous report, never a
+--   torn one.  The temporary name is the writing thread's own, since a
+--   snapshot thread and the main thread may write the same report.  Where no
+--   file can be created beside the target -- @/dev/null@, a read-only
+--   directory holding a writable file -- the target is written directly.
 withOutputSink :: FilePath -> (Sink -> TCM a) -> TCM a
 withOutputSink "-" k = k $ liftIO . hPutStr stdout
 withOutputSink fp  k = do
-  h <- liftIO $ do
-    h <- openFile fp WriteMode
+  (h, finish, abandon) <- liftIO $ do
+    t <- myThreadId
+    let tmp = fp ++ ".tmp-" ++ filter isDigit (show t)
+    beside <- E.try (openFile tmp WriteMode)
+    (h, finish, abandon) <- case beside of
+      Right h -> pure (h, renameFile tmp fp, removeFile tmp)
+      Left (_ :: E.IOException) -> do
+        h <- openFile fp WriteMode
+        pure (h, pure (), pure ())
     -- Agda types are full of Unicode, and the locale encoding is not to be
     -- trusted: under @LC_ALL=C@ the default handle encoding fails on the
     -- first arrow.
     hSetEncoding h utf8
     hSetBuffering h $ BlockBuffering Nothing
-    pure h
+    pure (h, finish, abandon)
   -- TCM is not 'MonadUnliftIO', so the handle is closed by hand on both the
   -- normal and the exceptional path.
   r <- k (liftIO . hPutStr h) `catchError` \ err -> do
-         liftIO $ hClose h
+         liftIO $ hClose h >> abandon
          throwError err
-  liftIO $ hClose h
+  liftIO $ hClose h >> finish
   pure r
 
 ---------------------------------------------------------------------------
@@ -109,6 +129,8 @@ data Completeness
   = Complete
   | Incomplete String
       -- ^ The run stopped; says what stopped it.
+  | Snapshot Integer
+      -- ^ The run is still going; this many seconds in.
 
 -- | The state an error was raised in, for the errors that carry one.
 --
@@ -145,6 +167,22 @@ defKind = \case
   Constructor{}      -> "constructor"
   Primitive{}        -> "primitive"
   PrimitiveSort{}    -> "primitive-sort"
+
+-- | How a report names a site.  A check after a mutual block is named by
+--   what it is and the block's first definition, @[termination] M.f@.
+siteLabel :: ProfileSite -> String
+siteLabel = \case
+  SiteDefinition q  -> prettyShow q
+  SiteApplication m -> prettyShow m
+  SiteCheck c q     -> "[" ++ c ++ "] " ++ prettyShow q
+
+-- | What locates a site in the source: the definition, the module applied
+--   to, or the first definition of the checked block.
+siteAnchor :: ProfileSite -> Either ModuleName QName
+siteAnchor = \case
+  SiteDefinition q  -> Right q
+  SiteApplication m -> Left m
+  SiteCheck _ q     -> Right q
 
 ---------------------------------------------------------------------------
 -- * The project

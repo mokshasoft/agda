@@ -1,6 +1,7 @@
 Counts of forced evaluations, per definition, most counted first.
 Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
-The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.
+Checking is divided into sites: definitions; module applications; the work after each declaration, [highlighting] and [constraints] (solving its constraints, freezing its metas); and the checks after a mutual block, such as [positivity] and [termination].  Each is named by the first name the declaration or block declares.  The sites table gives each site's own share and the share including the sites nested in it: CPU time in microseconds with --profile=definitions, bytes allocated with --profile=allocation, and unfoldings caused with --profile=reduction.
+The unfoldings are also listed by the site whose checking caused them, each with the 5 definitions it unfolded most; work outside every site has no name.
 
 counted modules (1)
   ProfileCountersText
@@ -11,7 +12,7 @@ unfoldings (4)
            6  ProfileCountersText.loop  function  ProfileCountersText.agda:16.1-5
            1  ProfileCountersText.five  function  ProfileCountersText.agda:13.1-5
 
-unfoldings by the definition being checked (6)
+unfoldings by the site being checked (11)
           49  ProfileCountersText.loop  function  ProfileCountersText.agda:16.1-5
                       49  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
           41  ProfileCountersText.five  function  ProfileCountersText.agda:13.1-5
@@ -24,8 +25,30 @@ unfoldings by the definition being checked (6)
           16  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
                       12  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
                        4  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
-          14  (no definition)
-                      11  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
-                       3  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
            8  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
                        8  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+           3  [positivity] ProfileCountersText.Nat  positivity  ProfileCountersText.agda:6.6-9
+                       3  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+           3  [positivity] ProfileCountersText.loop  positivity  ProfileCountersText.agda:16.1-5
+                       3  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+           3  [termination] ProfileCountersText.loop  termination  ProfileCountersText.agda:16.1-5
+                       3  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+           2  [positivity] ProfileCountersText.five  positivity  ProfileCountersText.agda:13.1-5
+                       2  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+           2  [positivity] ProfileCountersText.test  positivity  ProfileCountersText.agda:20.1-5
+                       2  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+           1  [positivity] ProfileCountersText._≡_  positivity  ProfileCountersText.agda:10.6-9
+                       1  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+
+sites (11): unfoldings caused
+            49  ProfileCountersText.loop  function  ProfileCountersText.agda:16.1-5
+            41  ProfileCountersText.five  function  ProfileCountersText.agda:13.1-5
+            40  ProfileCountersText.test  function  ProfileCountersText.agda:20.1-5
+            16  ProfileCountersText._≡_  datatype  ProfileCountersText.agda:10.6-9
+             8  ProfileCountersText.Nat  datatype  ProfileCountersText.agda:6.6-9
+             3  [positivity] ProfileCountersText.Nat  positivity  ProfileCountersText.agda:6.6-9
+             3  [positivity] ProfileCountersText.loop  positivity  ProfileCountersText.agda:16.1-5
+             3  [termination] ProfileCountersText.loop  termination  ProfileCountersText.agda:16.1-5
+             2  [positivity] ProfileCountersText.five  positivity  ProfileCountersText.agda:13.1-5
+             2  [positivity] ProfileCountersText.test  positivity  ProfileCountersText.agda:20.1-5
+             1  [positivity] ProfileCountersText._≡_  positivity  ProfileCountersText.agda:10.6-9

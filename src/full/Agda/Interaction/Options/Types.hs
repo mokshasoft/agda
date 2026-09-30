@@ -134,6 +134,12 @@ data CommandLineOptions = Options
       --   for per-definition conversion counts under @--profile=conversion@.
   , optCountersFormat        :: ReportFormat
       -- ^ Output format for them (@--counters-format=json|text@).
+  , optCountersFolded        :: Maybe FilePath
+      -- ^ Prefix of the folded-stack files, one per measure, that flame-graph
+      --   tools read (@--counters-folded@).
+  , optCountersSnapshot      :: Int
+      -- ^ Seconds between snapshots of the counters report while a run is
+      --   going (@--counters-snapshot@); 0 for none.
   , optSearchUnanchored      :: Bool
       -- ^ Let a candidate's telescope variable stand at the /head/ of an
       --   @instance-of@ match (@--search-unanchored@).  Strictly more

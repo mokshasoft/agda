@@ -91,13 +91,13 @@ import System.IO.Unsafe (unsafePerformIO)
 
 import Agda.Syntax.Common.Pretty (prettyShow)
 import Agda.Syntax.Internal
-import Agda.Syntax.Position (getRange, rStart')
+import Agda.Syntax.Position (HasRange, getRange, rStart')
 
 import Agda.Interaction.Options.Types
   ( ReportFormat (..), optWideFile, optWideFormat, optWideSections )
 import Agda.TypeChecking.AnalysisOutput
 import Agda.TypeChecking.DeadCode
-  ( moduleFileTable, sourceOfModule, pathInProject, allDefinitions )
+  ( ModuleFileTable, moduleFileTable, sourceOfModule, pathInProject, allDefinitions )
 import Agda.TypeChecking.Monad
 import qualified Agda.TypeChecking.ProfileCounters as PC
 
@@ -217,8 +217,8 @@ reportWideSections projectDir n outFile format done = do
   counted <- hasProfileOption Profile.Reduction
   ranked  <- collect projectDir n counted
   stopped <- case done of
-    Complete     -> pure []
-    Incomplete _ -> whereStopped projectDir
+    Complete -> pure []
+    _        -> whereStopped projectDir
   withOutputSink outFile $ \ put -> case format of
     ReportJSON -> renderJSON put projectDir n done counted stopped ranked
     ReportText -> renderText put projectDir n done counted stopped ranked
@@ -230,6 +230,7 @@ reportWideSections projectDir n outFile format done = do
     incompleteNote = \case
       Complete       -> ""
       Incomplete why -> " (INCOMPLETE: " ++ why ++ ")"
+      Snapshot t     -> " (SNAPSHOT at " ++ show t ++ " s)"
 
 -- | The definitions being checked when checking stopped, innermost first,
 --   each with its range when it has one to trust.
@@ -237,8 +238,11 @@ whereStopped :: FilePath -> TCM [(String, String)]
 whereStopped projectDir = do
   stack <- liftIO PC.getInProgress
   tbl   <- moduleFileTable
-  pure [ (prettyShow q, trustedRange projectDir (sourceOfModule tbl (qnameModule q)) q)
-       | q <- map cfName stack ]
+  pure [ (siteLabel site, either (at tbl id) (at tbl qnameModule) (siteAnchor site))
+       | site <- map cfSite stack ]
+  where
+    at :: HasRange a => ModuleFileTable -> (a -> ModuleName) -> a -> String
+    at tbl modOf x = trustedRange projectDir (sourceOfModule tbl (modOf x)) x
 
 -- | The caveats, which are part of the output rather than documentation of
 --   it: a reader of the report needs them and has not read this module.
@@ -258,6 +262,8 @@ caveat done counted = concat
         , "is exact, but whatever had not been checked yet is missing, including"
         , "the rest of the module that stopped."
         ]
+      Snapshot t ->
+        [ "SNAPSHOT: checking was still going, " ++ show t ++ " s in." ]
   ]
 
 renderText
@@ -297,14 +303,14 @@ renderJSON put projectDir n done counted stopped ranked = do
   put $ unlines $ ("{" :) $ concat
     [ withComma $ jField 1 "threshold" (JNum (max 1 n))
     , withComma $ jField 1 "complete" $ JBool $ case done of
-        Complete     -> True
-        Incomplete{} -> False
+        Complete -> True
+        _        -> False
     , case done of
-        Complete       -> []
         Incomplete why -> withComma $ jField 1 "stoppedBy" (JStr why)
+        _              -> []
     , case done of
-        Complete     -> []
-        Incomplete _ -> withComma $ jField 1 "checkingWhenStopped" $ JArr
+        Complete -> []
+        _        -> withComma $ jField 1 "checkingWhenStopped" $ JArr
           [ JObj $ ("name", JStr q) : [ ("range", JStr r) | not (null r) ]
           | (q, r) <- stopped ]
     , withComma $ jField 1 "count" (JNum (length ranked))

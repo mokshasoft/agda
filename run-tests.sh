@@ -5,6 +5,11 @@ cd "$(dirname "$0")" || exit 1
 AGDA=${AGDA:-$(ls -t dist-newstyle/build/*/*/Agda-*/x/agda/build/agda/agda 2>/dev/null | head -1)}
 [ -x "$AGDA" ] || { echo "no agda binary; run: cabal build exe:agda" >&2; exit 1; }
 MODE=${1:-check}   # check | accept
+# Agda's output is full of Unicode, and GHC encodes it by the locale. Under a
+# non-UTF-8 locale every test fails on the first arrow, so the locale is set
+# here rather than inherited. C.UTF-8 is built into glibc since 2.35 and
+# needs no locale archive, which a Nix shell may not provide.
+export LC_ALL=C.UTF-8
 pass=0; fail=0
 run_succeed() {
   local t=$1 dir=test/Succeed
@@ -72,20 +77,27 @@ check_json() {
   fi
 }
 
-# --profile=allocation reports bytes, which depend on the GHC version and the
-# build, so its test checks the report's structure rather than a golden.
-check_allocation() {
+# --profile=allocation and --profile=definitions report bytes and CPU time,
+# which depend on the GHC version, the build and the machine, so their test
+# checks the report's structure rather than a golden. --profile=definitions
+# also prints its own table after the report, so only the first JSON value
+# is read.
+check_sites() {
   local t=ProfileAllocation dir=test/Succeed
   rm -rf $dir/_build 2>/dev/null
   if $AGDA -v0 -i$dir -itest/ --no-libraries --profile=allocation \
-       --counters-file=- $dir/$t.agda 2>&1 | python3 -c '
+       --profile=definitions --counters-file=- $dir/$t.agda 2>&1 | python3 -c '
 import json, sys
-a = {r["name"].split(".", 1)[1]: r
-     for r in json.load(sys.stdin)["counters"]["allocation"]}
-for d in ["double", "f", "_.g", "test"]:
+doc, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())
+a = {r["name"].replace("ProfileAllocation.", ""): r for r in doc["counters"]["sites"]}
+for d in ["double", "f", "_.g", "test", "[termination] f"]:
     assert d in a, "no row for " + d
+for d in ["double", "f", "_.g", "test"]:
     assert 0 < a[d]["bytes"] <= a[d]["bytesWithNested"], d
+    assert 0 <= a[d]["timeMicros"] <= a[d]["timeMicrosWithNested"], d
 assert a["f"]["bytesWithNested"] >= a["f"]["bytes"] + a["_.g"]["bytesWithNested"], "f lacks g"
+assert a["[termination] f"]["kind"] == "termination"
+assert "[constraints] f" in a, "no row for the constraints after f"
 '; then
     echo "PASS  $t (structure)"; pass=$((pass+1))
   else
@@ -93,10 +105,31 @@ assert a["f"]["bytesWithNested"] >= a["f"]["bytes"] + a["_.g"]["bytesWithNested"
   fi
 }
 
+# The folded stacks of --counters-folded. Unfolding counts are exact, so the
+# unfoldings file is compared against a golden, ProfileAllocation.folded.
+check_folded() {
+  local t=ProfileAllocation dir=test/Succeed tmp
+  rm -rf $dir/_build 2>/dev/null
+  tmp=$(mktemp -d)
+  $AGDA -v0 -i$dir -itest/ --no-libraries --profile=reduction \
+    --counters-file=$tmp/report.json --counters-folded=$tmp/stacks \
+    $dir/$t.agda >/dev/null 2>&1
+  if [ -s "$tmp/stacks.unfoldings.folded" ]; then
+    compare "$dir/$t.folded" "$(clean < $tmp/stacks.unfoldings.folded)" "$t (folded)"
+  else
+    # Never compared, and never accepted: an empty golden would pass forever.
+    echo "FAIL  $t (folded): no stacks.unfoldings.folded written"; fail=$((fail+1))
+  fi
+  rm -rf "$tmp"
+}
+
 compare() {
   local golden=$1 got=$2 t=$3
   if [ "$MODE" = accept ]; then printf '%s\n' "$got" > "$golden"; echo "ACCEPT $t"; return; fi
-  if [ "$got" = "$(cat "$golden" 2>/dev/null)" ]; then
+  if [ ! -e "$golden" ]; then
+    # Otherwise empty output would match a missing golden and pass.
+    echo "FAIL  $t (no golden: $golden; run ./run-tests.sh accept)"; fail=$((fail+1))
+  elif [ "$got" = "$(cat "$golden")" ]; then
     echo "PASS  $t"; pass=$((pass+1))
   else
     echo "FAIL  $t"; diff <(printf '%s\n' "$got") "$golden" | head -25; fail=$((fail+1))
@@ -114,7 +147,8 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          WideSectionsUnfold; do
   run_succeed $t
 done
-[ "$MODE" = accept ] || check_allocation
+[ "$MODE" = accept ] || check_sites
+check_folded
 for t in DuplicateTypesJSON SearchTypeJSON WideSectionsJSON ProfileCountersJSON; do
   [ "$MODE" = accept ] || check_json test/Succeed/$t.warn $t
 done

@@ -1,0 +1,12 @@
+ProfileAllocation.agda;ProfileAllocation.Nat 8
+ProfileAllocation.agda;ProfileAllocation._≡_ 16
+ProfileAllocation.agda;ProfileAllocation.double 61
+ProfileAllocation.agda;ProfileAllocation.f 19
+ProfileAllocation.agda;ProfileAllocation.f;ProfileAllocation._.g 16
+ProfileAllocation.agda;ProfileAllocation.test 81
+ProfileAllocation.agda;[positivity] ProfileAllocation.Nat 3
+ProfileAllocation.agda;[positivity] ProfileAllocation._≡_ 1
+ProfileAllocation.agda;[positivity] ProfileAllocation.double 3
+ProfileAllocation.agda;[positivity] ProfileAllocation.f 4
+ProfileAllocation.agda;[positivity] ProfileAllocation.test 2
+ProfileAllocation.agda;[termination] ProfileAllocation.double 3

@@ -1,6 +1,6 @@
 {
   "complete": true,
-  "note": "Counts of forced evaluations, per definition, most counted first. Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules. The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.",
+  "note": "Counts of forced evaluations, per definition, most counted first. Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules. Checking is divided into sites: definitions; module applications; the work after each declaration, [highlighting] and [constraints] (solving its constraints, freezing its metas); and the checks after a mutual block, such as [positivity] and [termination].  Each is named by the first name the declaration or block declares.  The sites table gives each site's own share and the share including the sites nested in it: CPU time in microseconds with --profile=definitions, bytes allocated with --profile=allocation, and unfoldings caused with --profile=reduction. The unfoldings are also listed by the site whose checking caused them, each with the 5 definitions it unfolded most; work outside every site has no name.",
   "countedModules": ["ProfileCountersJSON"],
   "counters": {
     "unfoldings": [
@@ -22,8 +22,26 @@
       {"name": "ProfileCountersJSON.test", "kind": "function", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:23.1-5", "count": 48, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 20}, {"name": "ProfileCountersJSON._≡_", "count": 13}, {"name": "ProfileCountersJSON.loop", "count": 6}, {"name": "ProfileCountersJSON.Nat.suc", "count": 5}, {"name": "ProfileCountersJSON.Nat.zero", "count": 3}]},
       {"name": "ProfileCountersJSON.five", "kind": "function", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:16.1-5", "count": 41, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 41}]},
       {"name": "ProfileCountersJSON._≡_", "kind": "datatype", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:13.6-9", "count": 16, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 12}, {"name": "ProfileCountersJSON._≡_", "count": 4}]},
-      {"name": null, "count": 14, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 11}, {"name": "ProfileCountersJSON._≡_", "count": 3}]},
-      {"name": "ProfileCountersJSON.Nat", "kind": "datatype", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:9.6-9", "count": 8, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 8}]}
+      {"name": "ProfileCountersJSON.Nat", "kind": "datatype", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:9.6-9", "count": 8, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 8}]},
+      {"name": "[positivity] ProfileCountersJSON.Nat", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:9.6-9", "count": 3, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 3}]},
+      {"name": "[positivity] ProfileCountersJSON.loop", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:19.1-5", "count": 3, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 3}]},
+      {"name": "[termination] ProfileCountersJSON.loop", "kind": "termination", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:19.1-5", "count": 3, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 3}]},
+      {"name": "[positivity] ProfileCountersJSON.five", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:16.1-5", "count": 2, "unfoldedMost": [{"name": "ProfileCountersJSON.Nat", "count": 2}]},
+      {"name": "[positivity] ProfileCountersJSON.test", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:23.1-5", "count": 2, "unfoldedMost": [{"name": "ProfileCountersJSON._≡_", "count": 2}]},
+      {"name": "[positivity] ProfileCountersJSON._≡_", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:13.6-9", "count": 1, "unfoldedMost": [{"name": "ProfileCountersJSON._≡_", "count": 1}]}
+    ],
+    "sites": [
+      {"name": "ProfileCountersJSON.loop", "kind": "function", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:19.1-5", "unfoldingsCaused": 51},
+      {"name": "ProfileCountersJSON.test", "kind": "function", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:23.1-5", "unfoldingsCaused": 48},
+      {"name": "ProfileCountersJSON.five", "kind": "function", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:16.1-5", "unfoldingsCaused": 41},
+      {"name": "ProfileCountersJSON._≡_", "kind": "datatype", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:13.6-9", "unfoldingsCaused": 16},
+      {"name": "ProfileCountersJSON.Nat", "kind": "datatype", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:9.6-9", "unfoldingsCaused": 8},
+      {"name": "[positivity] ProfileCountersJSON.Nat", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:9.6-9", "unfoldingsCaused": 3},
+      {"name": "[positivity] ProfileCountersJSON.loop", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:19.1-5", "unfoldingsCaused": 3},
+      {"name": "[termination] ProfileCountersJSON.loop", "kind": "termination", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:19.1-5", "unfoldingsCaused": 3},
+      {"name": "[positivity] ProfileCountersJSON.five", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:16.1-5", "unfoldingsCaused": 2},
+      {"name": "[positivity] ProfileCountersJSON.test", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:23.1-5", "unfoldingsCaused": 2},
+      {"name": "[positivity] ProfileCountersJSON._≡_", "kind": "positivity", "source": "ProfileCountersJSON.agda", "range": "ProfileCountersJSON.agda:13.6-9", "unfoldingsCaused": 1}
     ]
   }
 }

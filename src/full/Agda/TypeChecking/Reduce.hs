@@ -663,7 +663,7 @@ unfoldDefinitionStep v0 f es =
   whenProfile Profile.Reduction $ do
     env <- askTC
     when (envProfileCounting env) $
-      tickUnfold (cfName <$> listToMaybe (envCheckingDefinitions env)) f
+      tickUnfold (cfSite <$> listToMaybe (envCheckingDefinitions env)) f
   traceSDoc "tc.reduce" 90 ("unfoldDefinitionStep v0" <+> pretty v0) $ do
   info <- getConstInfo f
   rewr <- instantiateRewriteRules =<< getRewriteRulesFor f

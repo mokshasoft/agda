@@ -4169,19 +4169,47 @@ data TCEnv =
           }
     deriving (Generic)
 
--- | A definition being checked, as the profile counters see it.
+-- | What the profile counters attribute checking work to.
+--
+--   Mostly definitions, but not only: a module application, the constraint
+--   solving after a declaration and the checks run after a mutual block do
+--   work of their own, and a profile that files it under whatever definition
+--   encloses it, or under nothing, cannot say where the work went.
+data ProfileSite
+  = SiteDefinition QName
+  | SiteApplication ModuleName
+      -- ^ @module M = N args@, named by @M@.
+  | SiteCheck String QName
+      -- ^ Work after a declaration (@"highlighting"@, @"constraints"@) or a
+      --   check after a mutual block (@"termination"@, @"positivity"@, ...),
+      --   named by the first name the declaration or block declares.
+  deriving (Eq, Ord, Show, Generic)
+
+instance Hashable ProfileSite where
+  hashWithSalt s = \case
+    SiteDefinition q  -> s `hashWithSalt` (0 :: Int) `hashWithSalt` q
+    SiteApplication m -> s `hashWithSalt` (1 :: Int) `hashWithSalt` mnameToList m
+    SiteCheck c q     -> s `hashWithSalt` (2 :: Int) `hashWithSalt` c `hashWithSalt` q
+
+instance NFData ProfileSite
+
+-- | Something being checked, as the profile counters see it.
 data CheckingFrame = CheckingFrame
-  { cfName       :: QName
+  { cfSite       :: ProfileSite
+  , cfPath       :: [ProfileSite]
+      -- ^ The sites enclosing it, outermost first, ending with its own.
   , cfAllocStart :: !Int64
       -- ^ The thread's allocation counter when checking it began.  GHC's
       --   counter decreases as the thread allocates.
-  , cfNested     :: !(IORef Int64)
-      -- ^ Bytes allocated by the definitions nested in it, so that its own
-      --   share can be told from theirs.
+  , cfTimeStart  :: !Integer
+      -- ^ CPU time when checking it began, in picoseconds.
+  , cfNested     :: !(IORef (Int64, Integer))
+      -- ^ Bytes allocated and CPU time spent by the frames nested in it, so
+      --   that its own share can be told from theirs.
   }
 
 instance NFData CheckingFrame where
-  rnf (CheckingFrame q a _) = rnf q `seq` rnf a
+  rnf (CheckingFrame s p a t _) = rnf s `seq` rnf p `seq` rnf a `seq` rnf t
 
 initEnv :: TCEnv
 initEnv = TCEnv { envContext             = []

@@ -8,7 +8,8 @@ cost    width  defs  copies  unfoldings section
 1       1      1     1       1          WideSectionsUnfold._.M = WideSectionsUnfold.Inner  WideSectionsUnfold.agda:25.12-13
 Counts of forced evaluations, per definition, most counted first.
 Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
-The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.
+Checking is divided into sites: definitions; module applications; the work after each declaration, [highlighting] and [constraints] (solving its constraints, freezing its metas); and the checks after a mutual block, such as [positivity] and [termination].  Each is named by the first name the declaration or block declares.  The sites table gives each site's own share and the share including the sites nested in it: CPU time in microseconds with --profile=definitions, bytes allocated with --profile=allocation, and unfoldings caused with --profile=reduction.
+The unfoldings are also listed by the site whose checking caused them, each with the 5 definitions it unfolded most; work outside every site has no name.
 
 counted modules (1)
   WideSectionsUnfold
@@ -20,7 +21,7 @@ unfoldings (5)
            1  WideSectionsUnfold._.M.add  function  WideSectionsUnfold.agda:25.12-13
            1  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
 
-unfoldings by the definition being checked (6)
+unfoldings by the site being checked (12)
           57  WideSectionsUnfold.Inner.add  function  WideSectionsUnfold.agda:18.3-6
                       57  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
           55  WideSectionsUnfold.test  function  WideSectionsUnfold.agda:27.1-5
@@ -28,14 +29,39 @@ unfoldings by the definition being checked (6)
                       13  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
                        3  WideSectionsUnfold.Inner.add  function  WideSectionsUnfold.agda:18.3-6
                        1  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
-          36  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
-                      35  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+          30  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
+                      29  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
                        1  WideSectionsUnfold._.M.add  function  WideSectionsUnfold.agda:25.12-13
-          19  (no definition)
-                      16  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
-                       3  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
           16  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
                       12  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
                        4  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
            8  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
                        8  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+           6  WideSectionsUnfold._.M  module application  WideSectionsUnfold.agda:25.12-13
+                       6  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+           6  [termination] WideSectionsUnfold.Inner.add  termination  WideSectionsUnfold.agda:18.3-6
+                       6  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+           4  [positivity] WideSectionsUnfold.f  positivity  WideSectionsUnfold.agda:22.1-2
+                       4  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+           3  [positivity] WideSectionsUnfold.Inner.add  positivity  WideSectionsUnfold.agda:18.3-6
+                       3  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+           3  [positivity] WideSectionsUnfold.Nat  positivity  WideSectionsUnfold.agda:10.6-9
+                       3  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+           2  [positivity] WideSectionsUnfold.test  positivity  WideSectionsUnfold.agda:27.1-5
+                       2  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+           1  [positivity] WideSectionsUnfold._≡_  positivity  WideSectionsUnfold.agda:14.6-9
+                       1  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+
+sites (12): unfoldings caused
+            57  WideSectionsUnfold.Inner.add  function  WideSectionsUnfold.agda:18.3-6
+            55  WideSectionsUnfold.test  function  WideSectionsUnfold.agda:27.1-5
+            30  WideSectionsUnfold.f  function  WideSectionsUnfold.agda:22.1-2
+            16  WideSectionsUnfold._≡_  datatype  WideSectionsUnfold.agda:14.6-9
+             8  WideSectionsUnfold.Nat  datatype  WideSectionsUnfold.agda:10.6-9
+             6  WideSectionsUnfold._.M  module application  WideSectionsUnfold.agda:25.12-13
+             6  [termination] WideSectionsUnfold.Inner.add  termination  WideSectionsUnfold.agda:18.3-6
+             4  [positivity] WideSectionsUnfold.f  positivity  WideSectionsUnfold.agda:22.1-2
+             3  [positivity] WideSectionsUnfold.Inner.add  positivity  WideSectionsUnfold.agda:18.3-6
+             3  [positivity] WideSectionsUnfold.Nat  positivity  WideSectionsUnfold.agda:10.6-9
+             2  [positivity] WideSectionsUnfold.test  positivity  WideSectionsUnfold.agda:27.1-5
+             1  [positivity] WideSectionsUnfold._≡_  positivity  WideSectionsUnfold.agda:14.6-9

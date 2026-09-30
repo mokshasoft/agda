@@ -712,6 +712,8 @@ defaultOptions = Options
   , optWideFormat            = ReportJSON
   , optCountersFile          = Nothing
   , optCountersFormat        = ReportJSON
+  , optCountersFolded        = Nothing
+  , optCountersSnapshot      = 60
   }
 
 defaultPragmaOptions :: PragmaOptions
@@ -1256,6 +1258,15 @@ countersFormatFlag s o = do
   fmt <- reportFormat "--counters-format" s
   return $ o { optCountersFormat = fmt }
 
+countersFoldedFlag :: FilePath -> Flag CommandLineOptions
+countersFoldedFlag s o = return $ o { optCountersFolded = Just s }
+
+countersSnapshotFlag :: String -> Flag CommandLineOptions
+countersSnapshotFlag s o = case reads s of
+  [(n, "")] | n >= 0 -> return $ o { optCountersSnapshot = n }
+  _ -> throwError $
+    "--counters-snapshot expects a non-negative number of seconds, got: " ++ s
+
 wideFileFlag :: FilePath -> Flag CommandLineOptions
 wideFileFlag s o = return $ o { optWideFile = s }
 
@@ -1551,6 +1562,16 @@ standardOptions =
                      "marked incomplete.")
     , Option []     ["counters-format"] (ReqArg countersFormatFlag "json|text")
                     "format for the --counters-file report. The default is json."
+    , Option []     ["counters-folded"] (ReqArg countersFoldedFlag "PREFIX")
+                    ("also write the counters as folded stacks, the input of flame-graph\n" ++
+                     "tools such as speedscope or flamegraph.pl: PREFIX.time.folded with\n" ++
+                     "--profile=definitions, PREFIX.allocation.folded with\n" ++
+                     "--profile=allocation, PREFIX.unfoldings.folded with --profile=reduction.\n" ++
+                     "Each stack is the file, then the sites being checked, outermost first.")
+    , Option []     ["counters-snapshot"] (ReqArg countersSnapshotFlag "SECONDS")
+                    ("while a run is going, rewrite the --counters-file report every SECONDS\n" ++
+                     "seconds, marked as a snapshot, so that a run killed outright still\n" ++
+                     "leaves one. The default is 60; 0 turns it off. Never for stdout.")
     , Option []     ["search-unanchored"] (NoArg searchUnanchoredFlag)
                     ("in the instance-of section of --search-type, also report definitions\n" ++
                      "whose conclusion is a bare variable. Such a definition fits every\n" ++

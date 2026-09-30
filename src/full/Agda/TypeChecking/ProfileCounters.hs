@@ -50,17 +50,20 @@
 --     function thousands of times shows up, often only, as that library
 --     function's count.
 --
---   [They say who caused them.]  Each unfolding is also attributed to the
---     definition whose checking caused it ('envCheckingDefinitions'), since a
---     count on a library function says what was hot but not which line of
---     the project made it so.  Work done outside any one definition -- a
---     module application, termination checking of a mutual block -- is
---     attributed to no definition.
+--   [They say who caused them.]  Checking is divided into sites
+--     ('ProfileSite'): the definitions, and the work that belongs to no one
+--     definition -- a module application, the constraint solving after a
+--     declaration, the checks after a mutual block.
+--     Each unfolding is also attributed to the site being checked when it
+--     happened ('envCheckingDefinitions'), since a count on a library
+--     function says what was hot but not which line of the project made it
+--     so.
 --
---   [Memory is counted per definition checked.]  The bytes allocated while
---     checking each definition, from GHC's per-thread allocation counter:
---     a primop, cheap enough to read at every definition, and blind to
---     neither evaluator nor elaboration.  Allocation is not residency -- a
+--   [Time and memory are measured per site.]  CPU time, and the bytes
+--     allocated from GHC's per-thread allocation counter, read when a site's
+--     checking begins and ends: cheap enough for every site, and blind to
+--     neither evaluator nor elaboration.  Each is kept as the site's own
+--     share and including the sites nested in it.  Allocation is not residency -- a
 --     heap overflow is about what stays live -- but a definition that
 --     allocates gigabytes is where to look first.  The size of normal forms
 --     is not measured: the fast evaluator never builds the terms, and
@@ -83,6 +86,7 @@
 module Agda.TypeChecking.ProfileCounters
   ( -- * The store
     Counters (..)
+  , FrameStats (..)
   , getCounters
   , countersRequested
     -- * Ticking
@@ -93,8 +97,8 @@ module Agda.TypeChecking.ProfileCounters
     -- * Which modules were checked
   , noteChecked
   , getChecked
-    -- * Definitions being checked, and what they allocate
-  , checkingDefinition
+    -- * Sites being checked, and what they cost
+  , checkingSite
   , getInProgress
   , allocationCounter
   ) where
@@ -110,14 +114,15 @@ import qualified Data.Set as Set
 
 import GHC.Conc (getAllocationCounter)
 
+import System.CPUTime (getCPUTime)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Agda.Syntax.Abstract.Name (QName)
 
 import Agda.Interaction.Options.HasOptions (HasOptions (..))
-import Agda.Interaction.Options.Types (optCountersFile)
+import Agda.Interaction.Options.Types (optCountersFile, optCountersFolded)
 import Agda.TypeChecking.Monad.Base
-  ( CheckingFrame (..), MonadTCEnv (..), TCEnv (..), asksTC )
+  ( CheckingFrame (..), MonadTCEnv (..), ProfileSite, TCEnv (..), asksTC )
 import Agda.TypeChecking.Monad.Debug (MonadDebug, hasProfileOption)
 
 import qualified Agda.Utils.ProfileOptions as Profile
@@ -126,7 +131,7 @@ import qualified Agda.Utils.ProfileOptions as Profile
 -- * The store
 ---------------------------------------------------------------------------
 
--- | One map per counter, keyed by the definition the number is about.
+-- | One map per counter.
 --
 --   A counter is added here when something ticks it, not before: a slot
 --   nothing fills would be reported as "measured, nothing found".
@@ -136,15 +141,26 @@ data Counters = Counters
   , cConv     :: !(HMap.HashMap QName Int)
       -- ^ Times a definition's head took part in a conversion check.
   , cCaused   :: !(HMap.HashMap Cause (HMap.HashMap QName Int))
-      -- ^ The unfoldings again, by the definition whose checking caused
-      --   them: cause, then what was unfolded.
-  , cAlloc    :: !(HMap.HashMap QName (Int, Int))
-      -- ^ Bytes allocated while checking a definition: its own, and
-      --   including the definitions nested in it.
+      -- ^ The unfoldings again, by the site being checked when they
+      --   happened: cause, then what was unfolded.
+  , cFrames   :: !(HMap.HashMap ProfileSite FrameStats)
+      -- ^ Every site whose checking finished, with what it cost.
   }
 
--- | The definition being checked when a tick fired, if any.
-type Cause = Maybe QName
+-- | What checking one site cost.
+data FrameStats = FrameStats
+  { fsPath     :: [ProfileSite]
+      -- ^ The sites enclosing it, outermost first, ending with its own.
+  , fsOwnBytes :: !Int
+  , fsAllBytes :: !Int
+      -- ^ Including the sites nested in it.
+  , fsOwnTime  :: !Integer
+      -- ^ CPU time, in picoseconds.
+  , fsAllTime  :: !Integer
+  }
+
+-- | The site being checked when a tick fired, if any.
+type Cause = Maybe ProfileSite
 
 emptyCounters :: Counters
 emptyCounters = Counters HMap.empty HMap.empty HMap.empty HMap.empty
@@ -159,16 +175,19 @@ getCounters :: IO Counters
 getCounters = readIORef counters
 
 -- | Is the counters report wanted at all?  It is when @--profile=reduction@
---   or @--profile=allocation@ is on, or when @--counters-file@ is given.
+--   or @--profile=allocation@ is on, or when @--counters-file@ or
+--   @--counters-folded@ is given.
 --
---   @--profile=conversion@ alone does not ask for it: that option predates
---   the counters, and a run using it must neither write a file it did not
---   ask for nor pay for per-definition ticks.
+--   @--profile=conversion@ and @--profile=definitions@ alone do not ask for
+--   it: they predate the counters, and a run using them must neither write
+--   a file it did not ask for nor pay for per-site bookkeeping.
 countersRequested :: (HasOptions m, MonadDebug m) => m Bool
 countersRequested = do
   red   <- hasProfileOption Profile.Reduction
   alloc <- hasProfileOption Profile.Allocation
-  if red || alloc then pure True else isJust . optCountersFile <$> commandLineOptions
+  if red || alloc then pure True else do
+    opts <- commandLineOptions
+    pure $ isJust (optCountersFile opts) || isJust (optCountersFolded opts)
 
 ---------------------------------------------------------------------------
 -- * Ticking
@@ -252,12 +271,12 @@ getChecked :: IO [String]
 getChecked = Set.toList <$> readIORef checked
 
 ---------------------------------------------------------------------------
--- * Definitions being checked, and what they allocate
+-- * Sites being checked, and what they cost
 ---------------------------------------------------------------------------
 
--- | The definitions being checked, innermost first, as of the last one
---   entered or left.  Set on entry and reset on a normal exit only, so an
---   exception leaves it naming the definitions it escaped from.
+-- | The sites being checked, innermost first, as of the last one entered or
+--   left.  Set on entry and reset on a normal exit only, so an exception
+--   leaves it naming the sites it escaped from.
 inProgress :: IORef [CheckingFrame]
 inProgress = unsafePerformIO $ newIORef []
 {-# NOINLINE inProgress #-}
@@ -265,40 +284,61 @@ inProgress = unsafePerformIO $ newIORef []
 getInProgress :: IO [CheckingFrame]
 getInProgress = readIORef inProgress
 
--- | The thread's allocation counter, which decreases as it allocates.
+-- | The thread's allocation counter, which decreases as it allocates.  It is
+--   per thread: only the thread doing the checking can read a meaningful
+--   one.
 allocationCounter :: IO Int64
 allocationCounter = getAllocationCounter
 
--- | Check a definition, recording it as the one being checked.
+-- | Check a site, recording it as the one being checked.
 --
---   Its allocation is recorded when it is checked normally, the counters are
---   counting, and @--profile=allocation@ is on.  Allocation is an option of
---   its own because the numbers depend on the GHC version and the build.  What an inner definition allocates is added to its
---   parent's nested total, so a definition's own share is its whole less
---   that.  Called where "Agda.TypeChecking.Rules.Decl" bills a definition
---   for @--profile=definitions@.
-checkingDefinition
+--   What it cost is recorded when it is checked normally, the counters are
+--   counting, and the report was asked for.  What an inner site costs is
+--   added to its parent's nested total, so a site's own share is its whole
+--   less that.  Called where "Agda.TypeChecking.Rules.Decl" bills a
+--   definition for @--profile=definitions@, and around module applications,
+--   the work after each declaration and the checks after a mutual block.
+checkingSite
   :: (MonadTCEnv m, MonadIO m, HasOptions m, MonadDebug m)
-  => QName -> m a -> m a
-checkingDefinition x m = do
+  => ProfileSite -> m a -> m a
+checkingSite site m = do
   parent <- asksTC envCheckingDefinitions
-  frame  <- liftIO $ CheckingFrame x <$> getAllocationCounter <*> newIORef 0
+  let path = maybe [] cfPath (headMay parent) ++ [site]
+  frame  <- liftIO $ CheckingFrame site path
+              <$> getAllocationCounter <*> getCPUTime <*> newIORef (0, 0)
   let here = frame : parent
   liftIO $ writeIORef inProgress here
   r <- localTC (\ e -> e { envCheckingDefinitions = here }) m
   counting <- asksTC envProfileCounting
-  record   <- if counting then hasProfileOption Profile.Allocation else pure False
+  record   <- if counting then countersRequested else pure False
   liftIO $ do
-    end    <- getAllocationCounter
-    nested <- readIORef (cfNested frame)
-    let whole = cfAllocStart frame - end
+    endAlloc <- getAllocationCounter
+    endTime  <- getCPUTime
+    (nestedAlloc, nestedTime) <- readIORef (cfNested frame)
+    let allAlloc = cfAllocStart frame - endAlloc
+        allTime  = endTime - cfTimeStart frame
     case parent of
-      p : _ -> modifyIORef' (cfNested p) (+ whole)
+      p : _ -> modifyIORef' (cfNested p) $ \ (a, t) ->
+                 let a' = a + allAlloc; t' = t + allTime in a' `seq` t' `seq` (a', t')
       []    -> pure ()
     when record $ modifyIORef' counters $ \ c -> c
-      { cAlloc = HMap.insertWith add x
-                   (fromIntegral (whole - nested), fromIntegral whole) (cAlloc c) }
+      { cFrames = HMap.insertWith add site
+          FrameStats { fsPath     = path
+                     , fsOwnBytes = fromIntegral (allAlloc - nestedAlloc)
+                     , fsAllBytes = fromIntegral allAlloc
+                     , fsOwnTime  = allTime - nestedTime
+                     , fsAllTime  = allTime
+                     }
+          (cFrames c) }
     writeIORef inProgress parent
   pure r
   where
-    add (a, b) (a', b') = (a + a', b + b')
+    headMay (x : _) = Just x
+    headMay []      = Nothing
+    -- A site checked twice (rare) is reported once, with both costs.
+    add new old = old
+      { fsOwnBytes = fsOwnBytes new + fsOwnBytes old
+      , fsAllBytes = fsAllBytes new + fsAllBytes old
+      , fsOwnTime  = fsOwnTime new + fsOwnTime old
+      , fsAllTime  = fsAllTime new + fsAllTime old
+      }

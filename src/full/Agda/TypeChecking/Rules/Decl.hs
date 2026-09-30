@@ -10,6 +10,7 @@ import Control.Monad.Writer (tell)
 import Control.Monad.IO.Class (MonadIO)
 
 import Data.Either (partitionEithers)
+import Data.List (sortOn)
 import qualified Data.Foldable as Fold
 import qualified Data.Map.Strict as MapS
 import Data.Maybe
@@ -20,7 +21,7 @@ import Agda.Interaction.Highlighting.Generate
 import Agda.Interaction.Options
 
 import qualified Agda.Syntax.Abstract as A
-import Agda.Syntax.Abstract.Views (deepUnscopeDecl, deepUnscopeDecls)
+import Agda.Syntax.Abstract.Views (KName, declaredNames, deepUnscopeDecl, deepUnscopeDecls)
 import Agda.Syntax.Internal
 import qualified Agda.Syntax.Info as Info
 import Agda.Syntax.Position
@@ -28,7 +29,7 @@ import Agda.Syntax.Common
 import Agda.Syntax.Common.Pretty (prettyShow)
 import Agda.Syntax.Concrete (pattern NoWhere_)
 import Agda.Syntax.Literal
-import Agda.Syntax.Scope.Base ( KindOfName(..) )
+import Agda.Syntax.Scope.Base ( KindOfName(..), WithKind(..) )
 
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Monad.Benchmark (MonadBench, Phase)
@@ -45,7 +46,7 @@ import Agda.TypeChecking.Positivity
 import Agda.TypeChecking.Positivity.Occurrence
 import Agda.TypeChecking.Polarity
 import Agda.TypeChecking.Pretty
-import Agda.TypeChecking.ProfileCounters (checkingDefinition)
+import Agda.TypeChecking.ProfileCounters (checkingSite)
 import Agda.TypeChecking.Primitive
 import Agda.TypeChecking.ProjectionLike
 import Agda.TypeChecking.Unquote
@@ -159,7 +160,11 @@ checkDecl d = setCurrentRange d $ do
       A.Primitive i x e        -> meta $ checkPrimitive i x e
       A.Mutual i ds            -> mutual i ds $ checkMutual i ds
       A.Section _r er x tel ds -> meta $ checkSection er x tel ds
-      A.Apply i er x mapp ci d -> meta $ checkSectionApplication i er x mapp ci d
+      -- A module application is checked as a site of its own: it copies
+      -- every definition of the module applied, and that work is no one
+      -- definition's.
+      A.Apply i er x mapp ci d -> meta $ checkingSite (SiteApplication x) $
+                                    checkSectionApplication i er x mapp ci d
       A.Import _ _ dir         -> none $ checkImportDirective dir
       A.Pragma i p             -> none $ checkPragma i p
       A.ScopedDecl scope ds    -> none $ setScope scope >> mapM_ checkDeclCached ds
@@ -217,27 +222,30 @@ checkDecl d = setCurrentRange d $ do
     whenNothingM (asksTC envMutualBlock) $ do
 
       -- Syntax highlighting.
-      highlight_ DontHightlightModuleContents d
+      afterDecl "highlighting" d $
+        highlight_ DontHightlightModuleContents d
 
       -- Defaulting of levels (only when --cumulativity)
-      whenM (optCumulativity <$> pragmaOptions) $
+      afterDecl "constraints" d $
+        whenM (optCumulativity <$> pragmaOptions) $
         defaultLevelsToZero (openMetas metas)
 
       -- Post-typing checks.
       whenJust finalChecks \theMutualChecks -> do
-        reportSLn "tc.decl" 20 $ "Attempting to solve constraints before freezing."
-        locallyTCState stInstanceHack (const True) $
-          wakeupConstraints_   -- solve emptiness and instance constraints
+        afterDecl "constraints" d $ do
+          reportSLn "tc.decl" 20 $ "Attempting to solve constraints before freezing."
+          locallyTCState stInstanceHack (const True) $
+            wakeupConstraints_   -- solve emptiness and instance constraints
 
-        checkingWhere <- asksTC envCheckingWhere
-        solveSizeConstraints $ if checkingWhere /= NoWhere_ then DontDefaultToInfty else DefaultToInfty
-        wakeupConstraints_   -- Size solver might have unblocked some constraints
+          checkingWhere <- asksTC envCheckingWhere
+          solveSizeConstraints $ if checkingWhere /= NoWhere_ then DontDefaultToInfty else DefaultToInfty
+          wakeupConstraints_   -- Size solver might have unblocked some constraints
 
-        case d of
-          A.Generalize{} -> pure ()
-          _ -> do
-            reportSLn "tc.decl" 20 $ "Freezing all open metas."
-            void $ freezeMetas (openMetas metas)
+          case d of
+            A.Generalize{} -> pure ()
+            _ -> do
+              reportSLn "tc.decl" 20 $ "Freezing all open metas."
+              void $ freezeMetas (openMetas metas)
 
         theMutualChecks
 
@@ -254,7 +262,7 @@ checkDecl d = setCurrentRange d $ do
     -- The definition is also recorded for the profile counters, which
     -- attribute to it the reduction and allocation checking it causes.
     check x i m = Bench.billTo [Bench.Definition x] $
-                  checkingDefinition x $ do
+                  checkingSite (SiteDefinition x) $ do
       reportSDoc "tc.decl" 5 $ ("Checking" <+> prettyTCM x) <> "."
       reportSLn "tc.decl.abstract" 25 $ show $ anyIsAbstract i
       r <- checkMaybeAbstractly i m
@@ -273,25 +281,52 @@ checkDecl d = setCurrentRange d $ do
         DifferentOpaque hs -> __IMPOSSIBLE__
       k1 (k2 cont)
 
+-- | Check the work that follows a declaration as a profile site of its own:
+--   highlighting it, and solving the constraints and freezing the metas it
+--   left.  That work is no one definition's, and can be most of what checking
+--   a declaration costs.  It is named by the declaration's first name in the
+--   source, @[constraints] M.f@; a module application declares no names, so
+--   its work is the application's own.  A declaration with neither, such as
+--   an @open@, is left unattributed.
+afterDecl :: String -> A.Declaration -> TCM a -> TCM a
+afterDecl c d = case d of
+  A.Apply _ _ m _ _ _ -> checkingSite (SiteApplication m)
+  _ -> maybe id (checkingSite . SiteCheck c) $
+         firstInSource $ map kindedThing (declaredNames d :: [KName])
+
+-- | The name that comes first in the source, which names a profile site for
+--   work done on behalf of several.  Ties, as between names without a range,
+--   break on the printed name, never on anything allocation-ordered.
+firstInSource :: [QName] -> Maybe QName
+firstInSource xs = case sortOn (\ x -> (rStart' (getRange x), prettyShow x)) xs of
+  x : _ -> Just x
+  []    -> Nothing
+
 -- Some checks that should be run at the end of a mutual block. The
 -- set names contains the names defined in the mutual block.
 mutualChecks :: Info.MutualInfo -> A.Declaration -> [A.Declaration] -> MutualId -> Set QName -> TCM ()
 mutualChecks mi d ds mid names = do
   -- Andreas, 2014-04-11: instantiate metas in definition types
   let nameList = Set.toList names
+      -- Each check is a site of its own for the profile counters, named by
+      -- the block's first definition in the source: its work belongs to no
+      -- one definition of the block.
+      site c = maybe id (checkingSite . SiteCheck c) (firstInSource nameList)
   mapM_ instantiateDefinitionType nameList
   -- Andreas, 2017-03-23: check positivity before termination.
   -- This allows us to reuse the information about SCCs
   -- to skip termination of non-recursive functions.
-  modifyAllowedReductions (SmallSet.delete UnconfirmedReductions) $
+  site "positivity" $
+    modifyAllowedReductions (SmallSet.delete UnconfirmedReductions) $
     checkPositivity_ mi names
   -- Andreas, 2013-02-27: check termination before injectivity,
   -- to avoid making the injectivity checker loop.
-  localTC (\ e -> e { envMutualBlock = Just mid }) $
+  site "termination" $
+    localTC (\ e -> e { envMutualBlock = Just mid }) $
     checkTermination_ d
   revisitRecordPatternTranslation nameList -- Andreas, 2016-11-19 issue #2308
 
-  mapM_ checkIApplyConfluence_ nameList
+  site "confluence" $ mapM_ checkIApplyConfluence_ nameList
 
   -- Andreas, 2015-03-26 Issue 1470:
   -- Restricting coinduction to recursive does not solve the
@@ -313,8 +348,8 @@ mutualChecks mi d ds mid names = do
   -- However, we need to repeat injectivity checking after termination checking,
   -- since more reductions are available after termination checking, thus,
   -- more instances of injectivity can be recognized.
-  checkInjectivity_        names
-  checkProjectionLikeness_ names
+  site "injectivity"         $ checkInjectivity_        names
+  site "projection-likeness" $ checkProjectionLikeness_ names
 
 -- | Check if there is a inferred eta record type in the mutual block.
 --   If yes, repeat the record pattern translation for all function definitions
@@ -927,7 +962,7 @@ checkTypeSignature' gtel (A.ScopedDecl scope ds) = do
   mapM_ (checkTypeSignature' gtel) ds
 checkTypeSignature' gtel (A.Axiom funSig i info mp x e) =
   Bench.billTo [Bench.Definition x] $
-  checkingDefinition x $
+  checkingSite (SiteDefinition x) $
   Bench.billTo [Bench.Typing, Bench.TypeSig] $
     let abstr = case Info.defAccess i of
           PrivateAccess{}

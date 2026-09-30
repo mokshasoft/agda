@@ -1,9 +1,10 @@
 Counts of forced evaluations, per definition, most counted first.
 Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
-The unfoldings are also listed by the definition whose checking caused them, each with the 5 definitions it unfolded most; work outside any definition (a module application, termination checking) has no name.
-INCOMPLETE: the run stopped (type error).  Every count is what had been counted when it stopped.  The definitions being checked when it stopped are listed, innermost first.
+Checking is divided into sites: definitions; module applications; the work after each declaration, [highlighting] and [constraints] (solving its constraints, freezing its metas); and the checks after a mutual block, such as [positivity] and [termination].  Each is named by the first name the declaration or block declares.  The sites table gives each site's own share and the share including the sites nested in it: CPU time in microseconds with --profile=definitions, bytes allocated with --profile=allocation, and unfoldings caused with --profile=reduction.
+The unfoldings are also listed by the site whose checking caused them, each with the 5 definitions it unfolded most; work outside every site has no name.
+INCOMPLETE: the run stopped (type error).  Every count is what had been counted when it stopped.  The sites being checked when it stopped are listed, innermost first.
 
-checking when it stopped (innermost first)
+being checked when it stopped (innermost first)
   ProfileCountersAbort.bad  function  ProfileCountersAbort.agda:23.1-4
 
 counted modules (1)
@@ -17,7 +18,7 @@ unfoldings (6)
            4  ProfileCountersAbort.Nat.zero  constructor  ProfileCountersAbort.agda:7.3-7
            1  ProfileCountersAbort.five  function  ProfileCountersAbort.agda:13.1-5
 
-unfoldings by the definition being checked (7)
+unfoldings by the site being checked (12)
           51  ProfileCountersAbort.loop  function  ProfileCountersAbort.agda:16.1-5
                       49  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
                        1  ProfileCountersAbort.Nat.suc  constructor  ProfileCountersAbort.agda:8.3-6
@@ -33,13 +34,36 @@ unfoldings by the definition being checked (7)
           16  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
                       12  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
                        4  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
-          14  (no definition)
-                      11  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
-                       3  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
            8  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
                        8  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
            5  ProfileCountersAbort.bad  function  ProfileCountersAbort.agda:23.1-4
                        5  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+           3  [positivity] ProfileCountersAbort.Nat  positivity  ProfileCountersAbort.agda:6.6-9
+                       3  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+           3  [positivity] ProfileCountersAbort.loop  positivity  ProfileCountersAbort.agda:16.1-5
+                       3  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+           3  [termination] ProfileCountersAbort.loop  termination  ProfileCountersAbort.agda:16.1-5
+                       3  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+           2  [positivity] ProfileCountersAbort.five  positivity  ProfileCountersAbort.agda:13.1-5
+                       2  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+           2  [positivity] ProfileCountersAbort.test  positivity  ProfileCountersAbort.agda:20.1-5
+                       2  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+           1  [positivity] ProfileCountersAbort._≡_  positivity  ProfileCountersAbort.agda:10.6-9
+                       1  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+
+sites (12): unfoldings caused
+            51  ProfileCountersAbort.loop  function  ProfileCountersAbort.agda:16.1-5
+            48  ProfileCountersAbort.test  function  ProfileCountersAbort.agda:20.1-5
+            41  ProfileCountersAbort.five  function  ProfileCountersAbort.agda:13.1-5
+            16  ProfileCountersAbort._≡_  datatype  ProfileCountersAbort.agda:10.6-9
+             8  ProfileCountersAbort.Nat  datatype  ProfileCountersAbort.agda:6.6-9
+             5  ProfileCountersAbort.bad  function  ProfileCountersAbort.agda:23.1-4
+             3  [positivity] ProfileCountersAbort.Nat  positivity  ProfileCountersAbort.agda:6.6-9
+             3  [positivity] ProfileCountersAbort.loop  positivity  ProfileCountersAbort.agda:16.1-5
+             3  [termination] ProfileCountersAbort.loop  termination  ProfileCountersAbort.agda:16.1-5
+             2  [positivity] ProfileCountersAbort.five  positivity  ProfileCountersAbort.agda:13.1-5
+             2  [positivity] ProfileCountersAbort.test  positivity  ProfileCountersAbort.agda:20.1-5
+             1  [positivity] ProfileCountersAbort._≡_  positivity  ProfileCountersAbort.agda:10.6-9
 ProfileCountersAbort.agda:24.7-10: error: [UnequalTerms]
 Set₁ !=< Nat
 when checking that the expression Set has type Nat

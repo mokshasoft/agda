@@ -275,7 +275,7 @@ runAgdaWithOptions interactor progName opts = do
           Bench.billTo [] $
             -- The per-definition counters are written however the run ends;
             -- see "Agda.TypeChecking.ProfileReport".
-            withCountersOnAbort $
+            withCountersOnAbort opts $
             interactor initialSetup checkFile
           `finally_` do
             -- Print benchmarks.
