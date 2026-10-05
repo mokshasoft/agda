@@ -126,6 +126,10 @@ data CommandLineOptions = Options
       --   stdout.
   , optWideFormat            :: ReportFormat
       -- ^ Output format for it (@--wide-format=json|text@).
+  , optNameResolutionFile    :: Maybe FilePath
+      -- ^ Where to write the name-resolution report
+      --   (@--name-resolution-report[=FILE]@); @-@ for stdout.  'Nothing'
+      --   when not asked for.
   , optCountersFile          :: Maybe FilePath
       -- ^ Where to write the per-definition counters collected by
       --   @--profile=reduction|conversion@

@@ -91,6 +91,8 @@ import Agda.TypeChecking.TypeSearch (searchType)
 import Agda.TypeChecking.AnalysisOutput
   ( Completeness (Complete), analysisProjectDir, runProjectDir, setMainSourceDir )
 import qualified Agda.TypeChecking.ProfileCounters as PC
+import Agda.TypeChecking.NameResolutionReport
+  ( startNameResolutionReport, writeNameResolutionReport )
 import Agda.TypeChecking.WideSections (reportWideSections, withWideSectionsOnAbort)
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
@@ -530,6 +532,9 @@ typeCheckMain mode src = do
 
   -- For the main interface, we also remember the pragmas from the file
   setOptionsFromSourcePragmas True src
+
+  -- Before any module is scope checked, the primitive ones included.
+  startNameResolutionReport
 
   -- Import the Agda.Primitive modules
   importPrimitiveModules
@@ -1263,6 +1268,7 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
       let topDecls = C.modDecls $ srcModule src
       concreteToAbstract_ (TopLevel (srcOrigin src) mname topDecls)
     reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Finished scope checking."
+    writeNameResolutionReport mname (filePath srcPath)
 
     let ds    = topLevelDecls topLevel
         scope = topLevelScope topLevel

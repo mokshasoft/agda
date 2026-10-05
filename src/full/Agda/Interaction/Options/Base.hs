@@ -710,6 +710,7 @@ defaultOptions = Options
   , optWideSections          = Nothing
   , optWideFile              = "agda-wide-sections.json"
   , optWideFormat            = ReportJSON
+  , optNameResolutionFile    = Nothing
   , optCountersFile          = Nothing
   , optCountersFormat        = ReportJSON
   , optCountersFolded        = Nothing
@@ -1267,6 +1268,10 @@ countersSnapshotFlag s o = case reads s of
   _ -> throwError $
     "--counters-snapshot expects a non-negative number of seconds, got: " ++ s
 
+nameResolutionReportFlag :: Maybe FilePath -> Flag CommandLineOptions
+nameResolutionReportFlag s o = return $
+  o { optNameResolutionFile = Just $ fromMaybe "agda-name-resolution.jsonl" s }
+
 wideFileFlag :: FilePath -> Flag CommandLineOptions
 wideFileFlag s o = return $ o { optWideFile = s }
 
@@ -1550,6 +1555,14 @@ standardOptions =
                      "Defaults to a file (agda-wide-sections.json).")
     , Option []     ["wide-format"] (ReqArg wideFormatFlag "json|text")
                     "format for the --wide-sections report. The default is json."
+    , Option []     ["name-resolution-report"]
+                    (OptArg nameResolutionReportFlag "PATH")
+                    ("for every module checked in this run, report where each name\n" ++
+                     "used in it came from: what it resolved to, and the open, import\n" ++
+                     "and module-application steps that brought it into scope. JSON\n" ++
+                     "lines, one record per occurrence, to PATH, or - for stdout\n" ++
+                     "(default: agda-name-resolution.jsonl). A module loaded from its\n" ++
+                     "interface is not scope checked, so it has no records.")
     , Option []     ["counters-file"] (ReqArg countersFileFlag "PATH")
                     ("where to write the per-definition counters collected by\n" ++
                      "--profile=reduction (unfoldings), --profile=allocation (bytes allocated)\n" ++

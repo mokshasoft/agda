@@ -1,0 +1,112 @@
+{-# OPTIONS_GHC -Wunused-imports #-}
+
+-- | The store behind @--name-resolution-report@: every name the scope
+--   checker resolved, per source file, until the report for that file is
+--   written.  See "Agda.TypeChecking.NameResolutionReport" for the report.
+--
+--   == Why a global store
+--
+--   The scope checker logs from 'Agda.Syntax.Scope.Monad.resolveName'', the
+--   one funnel every name goes through.  Keeping the log in 'TCState' would
+--   put it in the state the checker saves and restores around imports and
+--   speculative parsing, and would make every module that depends on
+--   'TCState' rebuild.  So it lives in a global 'IORef', as the profile
+--   counters do, keyed by the file each occurrence is written in.  An import
+--   checked in the middle of scope checking its importer logs under its own
+--   file, so nothing interleaves.
+--
+--   == Duplicates
+--
+--   The same occurrence is resolved more than once: the operator parser
+--   resolves every identifier of an expression to classify it, and the
+--   translation to abstract syntax resolves it again, sometimes restricted to
+--   constructors.  An occurrence is keyed by its range and what kind of
+--   record it is, and the last resolution wins, which is the one the
+--   translation made.
+module Agda.Syntax.Scope.NameResolutionLog
+  ( Occurrence (..)
+  , What (..)
+  , logEnabled
+  , setLogEnabled
+  , logOccurrence
+  , takeOccurrences
+  ) where
+
+import Data.IORef
+import qualified Data.Map.Strict as Map
+
+import System.IO.Unsafe (unsafePerformIO)
+
+import qualified Agda.Syntax.Abstract.Name as A
+import qualified Agda.Syntax.Concrete.Name as C
+import Agda.Syntax.Position
+import Agda.Syntax.Scope.Base
+
+import Agda.Utils.FileName (filePath)
+import qualified Agda.Utils.Maybe.Strict as Strict
+
+-- | One resolved occurrence of a name, as written in the source.
+data Occurrence = Occurrence
+  { occWritten :: C.QName
+      -- ^ The name as written, qualifier included, with its range.
+  , occWhat    :: What
+  }
+
+-- | What the occurrence resolved to.
+data What
+  = Resolved ResolvedName [AbstractModule]
+      -- ^ A name, and the modules its qualifier denotes (none when it is
+      --   unqualified).  The qualifier is looked up separately because
+      --   qualified lookup does not go through 'resolveModule', and an
+      --   occurrence like @C.x@ is not explained by @x@'s lineage alone.
+  | ModuleName AbstractModule
+      -- ^ A module name: @open M@, @import M@, @module X = M@.
+  | Binder BindingSource A.Name
+      -- ^ A variable bound here.  Without these, a constructor that turns
+      --   into a pattern variable leaves no record where it was.
+
+-- | The kind of record, part of the key: an occurrence can be both a module
+--   name and a name at the same range.
+whatTag :: What -> Int
+whatTag = \case
+  ModuleName{} -> 0
+  Resolved{}   -> 1
+  Binder{}     -> 2
+
+-- | Key within a file: start, end, kind of record.
+type Key = (Word, Word, Int)
+
+{-# NOINLINE enabled #-}
+enabled :: IORef Bool
+enabled = unsafePerformIO $ newIORef False
+
+{-# NOINLINE store #-}
+store :: IORef (Map.Map FilePath (Map.Map Key Occurrence))
+store = unsafePerformIO $ newIORef Map.empty
+
+-- | Is resolution being logged?  The one test paid per resolution when the
+--   report is off.
+logEnabled :: IO Bool
+logEnabled = readIORef enabled
+
+setLogEnabled :: Bool -> IO ()
+setLogEnabled b = do
+  writeIORef enabled b
+  writeIORef store Map.empty
+
+-- | Log an occurrence.  One without a range in a file was not written in
+--   the source, and is dropped.
+logOccurrence :: Occurrence -> IO ()
+logOccurrence o = case (rangeFile r, rStart' r, rEnd' r) of
+  (Strict.Just f, Just s, Just e) ->
+    let key = (fromIntegral (posPos s), fromIntegral (posPos e), whatTag (occWhat o))
+    in  modifyIORef' store $
+          Map.insertWith Map.union (filePath (rangeFilePath f)) (Map.singleton key o)
+  _ -> pure ()
+  where r = getRange (occWritten o)
+
+-- | The occurrences logged in a file, in source order, removed from the
+--   store.
+takeOccurrences :: FilePath -> IO [Occurrence]
+takeOccurrences fp = atomicModifyIORef' store $ \ m ->
+  (Map.delete fp m, maybe [] Map.elems (Map.lookup fp m))

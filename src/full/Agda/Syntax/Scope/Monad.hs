@@ -10,6 +10,7 @@ import Prelude hiding (null)
 import Control.Arrow ((***))
 import Control.Monad.Except       ( MonadError, throwError, runExceptT )
 import Control.Monad.State        ( StateT, runStateT, gets, modify )
+import Control.Monad.IO.Class     ( liftIO )
 import Control.Monad.Trans        ( MonadTrans, lift )
 import Control.Monad.Trans.Maybe  ( MaybeT(MaybeT), runMaybeT )
 import Control.Applicative
@@ -42,6 +43,7 @@ import Agda.Syntax.Concrete.Fixity
 import Agda.Syntax.Concrete.Definitions ( DeclarationWarning(..) ,DeclarationWarning'(..) )
   -- TODO: move the relevant warnings out of there
 import Agda.Syntax.Scope.Base as A
+import qualified Agda.Syntax.Scope.NameResolutionLog as Log
 
 import Agda.TypeChecking.Monad.Base as I
 import Agda.TypeChecking.Monad.Builtin
@@ -249,7 +251,10 @@ getVarsToBind :: ScopeM LocalVars
 getVarsToBind = useScope scopeVarsToBind
 
 addVarToBind :: C.Name -> LocalVar -> ScopeM ()
-addVarToBind x y = modifyScope_ $ updateVarsToBind $ AssocList.insert x y
+addVarToBind x y = do
+  -- Pattern variables are bound here, not in 'bindVariable'.
+  logBinder x (localBindingSource y) (localVar y)
+  modifyScope_ $ updateVarsToBind $ AssocList.insert x y
 
 -- | After collecting some variable names in the scopeVarsToBind,
 --   bind them all simultaneously.
@@ -315,7 +320,8 @@ freshAbstractQName' x = do
 freshConcreteName :: Range -> Int -> String -> ScopeM C.Name
 freshConcreteName r i s = do
   let cname = C.Name r C.NotInScope $ singleton $ Id $ stringToRawName $ s ++ show i
-  resolveName (C.QName cname) >>= \case
+  -- Unlogged: this name is generated, not written.
+  resolveNameUnlogged allKindsOfNames Nothing (C.QName cname) >>= \case
     UnknownName -> return cname
     _           -> freshConcreteName r (i + 1) s
 
@@ -335,7 +341,16 @@ resolveName = resolveName' allKindsOfNames Nothing
 --   of a different kind. (See issue 822.)
 resolveName' ::
   KindsOfNames -> Maybe (Set1 A.Name) -> C.QName -> ScopeM ResolvedName
-resolveName' kinds names x = runExceptT (tryResolveName kinds names x) >>= \case
+resolveName' kinds names x = do
+  r <- resolveNameUnlogged kinds names x
+  logResolution x r
+  return r
+
+-- | 'resolveName'' without logging it for @--name-resolution-report@: for a
+--   name that is not an occurrence in the source.
+resolveNameUnlogged ::
+  KindsOfNames -> Maybe (Set1 A.Name) -> C.QName -> ScopeM ResolvedName
+resolveNameUnlogged kinds names x = runExceptT (tryResolveName kinds names x) >>= \case
   Left (IllegalAmbiguity reason)  -> do
     reportS "scope.resolve" 60 $ unlines $
       "resolveName': ambiguous name" :
@@ -454,12 +469,31 @@ canHaveSuffixTest = do
   builtinSSetOmega <- getBuiltinName' builtinSSetOmega
   return $ \x -> Just x `elem` [builtinProp, builtinSet, builtinSSet, builtinPropOmega, builtinSetOmega, builtinSSetOmega]
 
+-- | Log a resolved name for @--name-resolution-report@.  An unknown name
+--   is not logged: speculative lookups produce them, and a real one is an
+--   error anyway.
+logResolution :: C.QName -> ResolvedName -> ScopeM ()
+logResolution _ UnknownName = pure ()
+logResolution x r = whenM (liftIO Log.logEnabled) $ do
+  quals <- case qualifierOf x of
+    Nothing -> pure []
+    Just q  -> scopeLookup q <$> getScope
+  liftIO $ Log.logOccurrence $ Log.Occurrence x $ Log.Resolved r quals
+  where
+    qualifierOf :: C.QName -> Maybe C.QName
+    qualifierOf (C.QName _)  = Nothing
+    qualifierOf (C.Qual m q) = Just $ maybe (C.QName m) (C.Qual m) (qualifierOf q)
+
 -- | Look up a module in the scope.
 resolveModule :: C.QName -> ScopeM AbstractModule
 resolveModule x = do
   ms <- scopeLookup x <$> getScope
   caseMaybe (nonEmpty ms) (typeError $ NoSuchModule x) $ \ case
-    AbsModule m why :| [] -> return $ AbsModule (m `withRangeOf` x) why
+    AbsModule m why :| [] -> do
+      let am = AbsModule (m `withRangeOf` x) why
+      whenM (liftIO Log.logEnabled) $
+        liftIO $ Log.logOccurrence $ Log.Occurrence x $ Log.ModuleName am
+      return am
     ms                    -> typeError $ AmbiguousModule x (fmap amodName ms)
 
 -- | Get the fixity of a not yet bound name.
@@ -522,7 +556,14 @@ bindVariable
   -> C.Name          -- ^ Concrete name.
   -> A.Name          -- ^ Abstract name.
   -> ScopeM ()
-bindVariable b x y = modifyLocalVars $ AssocList.insert x $ LocalVar y b []
+bindVariable b x y = do
+  logBinder x b y
+  modifyLocalVars $ AssocList.insert x $ LocalVar y b []
+
+-- | Log a binding for @--name-resolution-report@.
+logBinder :: C.Name -> A.BindingSource -> A.Name -> ScopeM ()
+logBinder x b y = unless (isNoName x) $ whenM (liftIO Log.logEnabled) $
+  liftIO $ Log.logOccurrence $ Log.Occurrence (C.QName x) $ Log.Binder b y
 
 -- | Temporarily unbind a variable. Used for non-recursive lets.
 unbindVariable :: C.Name -> ScopeM a -> ScopeM a
@@ -539,7 +580,8 @@ bindName' acc kind meta x y = whenJustM (bindName'' acc kind meta x y) typeError
 bindName'' :: Access -> KindOfName -> NameMetadata -> C.Name -> A.QName -> ScopeM (Maybe TypeError)
 bindName'' acc kind meta x y = do
   when (isNoName x) $ modifyScopes $ Map.map $ removeNameFromScope PrivateNS x
-  r  <- resolveName (C.QName x)
+  -- Unlogged: this is the name being defined, not a use of one in scope.
+  r  <- resolveNameUnlogged allKindsOfNames Nothing (C.QName x)
   let y' :: Either TypeError AbstractName
       y' = case r of
         -- Binding an anonymous declaration always succeeds.

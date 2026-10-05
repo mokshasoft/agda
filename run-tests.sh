@@ -211,7 +211,7 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff \
          SearchTypeHigherOrder SearchTypeLimit WideSections WideSectionsJSON \
          ProfileCountersJSON ProfileCountersText ProfileConversionAlone \
-         WideSectionsUnfold ProfileSites; do
+         WideSectionsUnfold ProfileSites NameResolutionReport; do
   run_succeed $t
 done
 [ "$MODE" = accept ] || check_sites
@@ -220,6 +220,22 @@ check_folded
 for t in DuplicateTypesJSON SearchTypeJSON WideSectionsJSON ProfileCountersJSON; do
   [ "$MODE" = accept ] || check_json test/Succeed/$t.warn $t
 done
+# --name-resolution-report writes JSON lines: every line of the golden must
+# parse on its own, the header included.
+check_jsonl() {
+  local golden=$1 t=$2
+  if python3 -c '
+import json, sys
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+assert lines and json.loads(lines[0]) == {"schema": 1, "report": "name-resolution"}
+for l in lines[1:]: json.loads(l)
+' "$golden" 2>/dev/null; then
+    echo "PASS  $t (valid JSON lines)"; pass=$((pass+1))
+  else
+    echo "FAIL  $t (golden is not valid JSON lines)"; fail=$((fail+1))
+  fi
+}
+[ "$MODE" = accept ] || check_jsonl test/Succeed/NameResolutionReport.warn NameResolutionReport
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done
 run_fail_whole WideSectionsAbort
 run_fail_whole ProfileCountersAbort
