@@ -1,0 +1,1 @@
+--profile=reduction --counters-file=- --counters-format=text

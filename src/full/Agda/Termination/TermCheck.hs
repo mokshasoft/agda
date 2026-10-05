@@ -50,6 +50,7 @@ import Agda.TypeChecking.Datatypes
 import Agda.TypeChecking.Functions
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Pretty
+import Agda.TypeChecking.ProfileCounters (subSite)
 import Agda.TypeChecking.Forcing
 import Agda.TypeChecking.Records -- (isRecordConstructor, isInductiveRecord)
 import Agda.TypeChecking.Reduce (reduce, normalise, instantiate, instantiateFull, appDefE')
@@ -614,7 +615,10 @@ targetElem ds = terGetTarget <&> \case
 
 termToDBP :: Term -> TerM DeBruijnPattern
 termToDBP t = ifNotM terGetUseDotPatterns (return unusedVar) $ {- else -} do
-  termToPattern =<< do liftTCM $ stripAllProjections =<< normalise t
+  -- A sub-site of the profile report: normalising dot patterns is one of
+  -- the three places where the termination checker reduces.
+  termToPattern =<< do
+    liftTCM $ subSite "termination/dot-patterns" $ stripAllProjections =<< normalise t
 
 -- | Convert a term (from a dot pattern) to a pattern for the purposes of the termination checker.
 --
@@ -865,7 +869,7 @@ function g es0 = do
          -- Andreas, 2017-06-20 issue #2613:
          -- We still need to reduce constructors, even when with-inlining happened.
          es <- -- ifM terGetHaveInlinedWith (return es0) {-else-} $
-           liftTCM $ forM es0 $
+           liftTCM $ subSite "termination/call-arguments" $ forM es0 $
              -- 2017-09-09, re issue #2732
              -- The eta-contraction that was here does not seem necessary to make structural order
              -- comparison not having to worry about eta.
@@ -892,7 +896,7 @@ function g es0 = do
          -- Andreas, 2014-03-26 only 6% of termination time for library test
          -- spent on call matrix generation
          (nrows, ncols, matrix) <- billTo [Benchmark.Termination, Benchmark.Compare] $
-           compareArgs es
+           subSite "termination/call-matrix" $ compareArgs es
 
          -- Andreas, 2022-03-21, #5823:
          -- If we are "calling" a record type we are guarded unless the origin
@@ -996,7 +1000,7 @@ tryReduceNonRecursiveClause g es continue fallback = do
     =<< asksTC envAllowedReductions
 
   -- Finally, try to reduce with the non-recursive clauses (and no rewrite rules).
-  r <- liftTCM $
+  r <- liftTCM $ subSite "termination/reduce-away-call" $
     modifyAllowedReductions (SmallSet.delete UnconfirmedReductions) $
     localTC (\e -> e { envTermCheckReducing = True }) $
     runReduceM $ appDefE' g v0 cls [] (map notReduced es)

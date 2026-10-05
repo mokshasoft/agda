@@ -105,6 +105,73 @@ assert "[constraints] f" in a, "no row for the constraints after f"
   fi
 }
 
+# The report of a run that checks two modules, ProfileSites and the
+# ProfileSitesImport it imports: the imported module's sites keep their
+# ranges, a mutual block with with-functions is named after the first name
+# written in it and has the whole block's range and size, the checks split
+# into sub-sites are there, and the module totals add up.  Bytes vary, so
+# this checks structure; the folded stacks are checked for line numbers.
+check_profile_sites() {
+  local t=ProfileSites dir=test/Succeed tmp
+  rm -rf $dir/_build 2>/dev/null
+  tmp=$(mktemp -d)
+  $AGDA -v0 -i$dir -itest/ --no-libraries --profile=allocation --profile=reduction \
+    --counters-file=$tmp/report.json --counters-folded=$tmp/stacks \
+    $dir/$t.agda >/dev/null 2>&1
+  if python3 - "$tmp" <<'PY'
+import json, sys, os
+tmp = sys.argv[1]
+doc = json.load(open(os.path.join(tmp, "report.json"), encoding="utf-8"))
+c = doc["counters"]
+sites = {r["name"]: r for r in c["sites"]}
+imp = [r for r in c["sites"] if r.get("source", "").endswith("ProfileSitesImport.agda")]
+assert imp, "no site of the imported module"
+for r in imp:
+    assert "range" in r, "imported site without a range: " + r["name"]
+assert doc["complete"], "the run did not finish"
+assert not [n for n in sites if "with-" in n], "a site is named after a with-function"
+withs = [r for r in c["unfoldings"] if "with-" in r["name"]]
+assert withs, "no with-function was unfolded"
+for r in withs:
+    assert r.get("withFunctionOf") in ("ProfileSites.even?", "ProfileSites.odd?"), r
+    assert "range" in r, r
+pos = sites["[positivity] ProfileSites.even?"]
+b = pos["block"]
+assert b["members"] == 2 and b["names"] == ["ProfileSites.even?", "ProfileSites.odd?"], b
+assert b["generated"] == 2 and not b["hasDataOrRecord"], b
+src = open("test/Succeed/ProfileSites.agda", encoding="utf-8").read().splitlines()
+first = src.index("even? : Nat → Bool") + 1
+last = src.index("... | b = b") + 1
+assert pos["range"].endswith(":%d.1-%d.12" % (first, last)), pos["range"]
+g = sites["[positivity/graph] ProfileSites.even?"]
+assert g["details"]["nodes"] > 0 and g["details"]["edges"] > 0, g
+assert "closedEdges" in sites["[positivity/closure] ProfileSites.even?"]["details"]
+assert sites["[termination/call-arguments] ProfileSites.even?"]["entries"] >= 2
+assert doc["uncountedModules"] == [], doc["uncountedModules"]
+assert sorted(doc["countedModules"]) == ["ProfileSites", "ProfileSitesImport"]
+mods = {m["source"]: m for m in c["modules"]}
+for src, m in mods.items():
+    rs = [r for r in c["sites"] if r.get("source") == src]
+    assert m["sites"] == len(rs), src
+    assert m["bytes"] == sum(r["bytes"] for r in rs), src
+    assert m["unfoldingsCaused"] == sum(r["unfoldingsCaused"] for r in rs), src
+assert sum(m["bytes"] for m in c["modules"]) == sum(r["bytes"] for r in c["sites"])
+for cause in c["unfoldingsByCause"]:
+    for u in cause["unfoldedMost"]:
+        assert "kind" in u, u
+    for u in cause["unfoldedMostFunctions"]:
+        assert u["kind"] == "function", u
+stacks = open(os.path.join(tmp, "stacks.allocation.folded"), encoding="utf-8").read().splitlines()
+assert any(";ProfileSitesImport.double:13 " in l for l in stacks), "no line on an imported frame"
+PY
+  then
+    echo "PASS  $t (structure)"; pass=$((pass+1))
+  else
+    echo "FAIL  $t (structure)"; fail=$((fail+1))
+  fi
+  rm -rf "$tmp"
+}
+
 # The folded stacks of --counters-folded. Unfolding counts are exact, so the
 # unfoldings file is compared against a golden, ProfileAllocation.folded.
 check_folded() {
@@ -144,10 +211,11 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff \
          SearchTypeHigherOrder SearchTypeLimit WideSections WideSectionsJSON \
          ProfileCountersJSON ProfileCountersText ProfileConversionAlone \
-         WideSectionsUnfold; do
+         WideSectionsUnfold ProfileSites; do
   run_succeed $t
 done
 [ "$MODE" = accept ] || check_sites
+[ "$MODE" = accept ] || check_profile_sites
 check_folded
 for t in DuplicateTypesJSON SearchTypeJSON WideSectionsJSON ProfileCountersJSON; do
   [ "$MODE" = accept ] || check_json test/Succeed/$t.warn $t

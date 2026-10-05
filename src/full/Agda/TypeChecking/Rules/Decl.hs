@@ -46,7 +46,7 @@ import Agda.TypeChecking.Positivity
 import Agda.TypeChecking.Positivity.Occurrence
 import Agda.TypeChecking.Polarity
 import Agda.TypeChecking.Pretty
-import Agda.TypeChecking.ProfileCounters (checkingSite)
+import Agda.TypeChecking.ProfileCounters (BlockInfo (..), checkingSite, noteBlock)
 import Agda.TypeChecking.Primitive
 import Agda.TypeChecking.ProjectionLike
 import Agda.TypeChecking.Unquote
@@ -291,16 +291,57 @@ checkDecl d = setCurrentRange d $ do
 afterDecl :: String -> A.Declaration -> TCM a -> TCM a
 afterDecl c d = case d of
   A.Apply _ _ m _ _ _ -> checkingSite (SiteApplication m)
-  _ -> maybe id (checkingSite . SiteCheck c) $
-         firstInSource $ map kindedThing (declaredNames d :: [KName])
+  _ -> case firstInSource names of
+    Nothing -> id
+    Just x  -> \ m -> do
+      noteBlock False x (blockInfo (getRange d) names)
+      checkingSite (SiteCheck c x) m
+  where names = map kindedThing (declaredNames d :: [KName])
 
 -- | The name that comes first in the source, which names a profile site for
---   work done on behalf of several.  Ties, as between names without a range,
---   break on the printed name, never on anything allocation-ordered.
+--   work done on behalf of several.  A name the user wrote is preferred to
+--   one Agda made up: a @with@-function has no range, and would otherwise
+--   come first and name a block of hand-written lemmas @with-29488@.  Ties,
+--   as between names without a range, break on the printed name, never on
+--   anything allocation-ordered.
 firstInSource :: [QName] -> Maybe QName
-firstInSource xs = case sortOn (\ x -> (rStart' (getRange x), prettyShow x)) xs of
-  x : _ -> Just x
-  []    -> Nothing
+firstInSource xs = listToMaybe $ inSourceOrder (filter userWritten xs) ++ inSourceOrder xs
+
+-- | Names by where they occur in the module being checked, those without a
+--   range last.  The occurrence, not the binding site: a copy made by
+--   @module M = N args@ is bound where the original is, but occurs at @M@.
+inSourceOrder :: [QName] -> [QName]
+inSourceOrder = sortOn $ \ x -> let p = rStart' (getRange x) in (isNothing p, p, prettyShow x)
+
+-- | Did the user write this name, rather than Agda make it up?  Agda's own
+--   names -- @with@-functions, @-rewrite@ and @-invert@ helpers -- have no
+--   range; extended and absurd lambdas do, but cannot be searched for.
+userWritten :: QName -> Bool
+userWritten x = isJust (rStart' (getRange x))
+  && not (isExtendedLambdaName x) && not (isAbsurdLambdaName x)
+
+-- | What the profile report says about a declaration or block: read when
+--   its checking is entered, while its range is still to hand.
+blockInfo :: Range -> [QName] -> TCM BlockInfo
+blockInfo r xs = do
+  defs <- mapM (fmap (either (const Nothing) (Just . theDef)) . getConstInfo') xs
+  -- A constructor is part of its datatype, not a member of its own.
+  let ys = [ x | (x, d) <- zip xs defs, not (maybe False isCon d) ]
+  pure BlockInfo
+    { biRange     = r
+    , biMembers   = inSourceOrder (filter userWritten ys)
+    , biGenerated = length (filter (not . userWritten) ys)
+    , biClauses   = sum [ length cs | Just Function{ funClauses = cs } <- defs ]
+    , biHasData   = not $ null [ () | Just d <- defs, isData d ]
+    }
+  where
+    isCon = \case
+      Constructor{} -> True
+      _             -> False
+    isData = \case
+      Datatype{} -> True
+      Record{}   -> True
+      _          -> False
 
 -- Some checks that should be run at the end of a mutual block. The
 -- set names contains the names defined in the mutual block.
@@ -312,6 +353,10 @@ mutualChecks mi d ds mid names = do
       -- the block's first definition in the source: its work belongs to no
       -- one definition of the block.
       site c = maybe id (checkingSite . SiteCheck c) (firstInSource nameList)
+  -- The block's own names, with-functions among them, which the
+  -- declaration does not list: this replaces what 'afterDecl' recorded.
+  whenJust (firstInSource nameList) $ \ x ->
+    noteBlock True x (blockInfo (getRange d) nameList)
   mapM_ instantiateDefinitionType nameList
   -- Andreas, 2017-03-23: check positivity before termination.
   -- This allows us to reuse the information about SCCs

@@ -1,0 +1,106 @@
+Counts of forced evaluations, per definition, most counted first.
+Counted only while checking the modules of the project listed as counted; what their checking unfolded is counted wherever it is defined, library or not.  Compare two reports only when they counted the same modules.
+Checking is divided into sites: definitions; module applications; the work after each declaration, [highlighting] and [constraints] (solving its constraints, freezing its metas); and the checks after a mutual block, such as [positivity] and [termination].  Each is named by the first name the user wrote in the declaration or block, never a with-function, and has the range of the whole declaration or block, with its size.  Some checks are split further, such as [positivity/graph] and [termination/call-arguments], with the number of times each was entered.  The sites table gives each site's own share and the share including the sites nested in it: CPU time in microseconds with --profile=definitions, bytes allocated with --profile=allocation, and unfoldings caused with --profile=reduction.  The modules table sums the sites' own shares by file.
+The unfoldings are also listed by the site whose checking caused them, each with the 5 definitions it unfolded most, and the 5 functions it unfolded most, since datatypes and constructors are counted whenever reduction meets them; work outside every site has no name.
+
+counted modules (2)
+  ProfileSites
+  ProfileSitesImport
+
+unfoldings (9)
+         181  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+         156  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+          20  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+           5  ProfileSites.even?  function  ProfileSites.agda:14.1-6
+           4  ProfileSites.odd?  function  ProfileSites.agda:15.1-5
+           2  ProfileSites.with-18  function  ProfileSites.agda:15.1-5  (with-function of ProfileSites.odd?)
+           2  ProfileSitesImport.double  function  ProfileSitesImport.agda:13.1-7
+           1  ProfileSites.with-8  function  ProfileSites.agda:14.1-6  (with-function of ProfileSites.even?)
+           1  ProfileSitesImport.two  function  ProfileSitesImport.agda:17.1-4
+
+unfoldings by the site being checked (22)
+         112  ProfileSites.even?  function  ProfileSites.agda:14.1-6
+                      70  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+                      39  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+                       3  ProfileSites.odd?  function  ProfileSites.agda:15.1-5
+          71  ProfileSites.odd?  function  ProfileSites.agda:15.1-5
+                      35  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+                      33  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+                       3  ProfileSites.even?  function  ProfileSites.agda:14.1-6
+          61  ProfileSitesImport.double  function  ProfileSitesImport.agda:13.1-7
+                      61  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+          41  ProfileSites.test  function  ProfileSites.agda:29.1-5
+                      14  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+                      13  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+                       6  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+                       2  ProfileSites.even?  function  ProfileSites.agda:14.1-6
+                       2  ProfileSitesImport.double  function  ProfileSitesImport.agda:13.1-7
+                       1  ProfileSites.odd?  function  ProfileSites.agda:15.1-5
+                       1  ProfileSites.with-18  function  ProfileSites.agda:15.1-5  (with-function of ProfileSites.odd?)
+                       1  ProfileSites.with-8  function  ProfileSites.agda:14.1-6  (with-function of ProfileSites.even?)
+          21  ProfileSitesImport.two  function  ProfileSitesImport.agda:17.1-4
+                      21  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+          16  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+                      12  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+                       4  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+           8  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+                       8  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+           8  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+                       8  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+           7  [positivity/graph] ProfileSites.even?  positivity/graph  ProfileSites.agda:14.1-24.12
+                       7  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+           6  [termination] ProfileSites.even?  termination  ProfileSites.agda:14.1-24.12
+                       4  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+                       2  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+           4  [positivity] ProfileSites.even?  positivity  ProfileSites.agda:14.1-24.12
+                       4  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+           3  [positivity/graph] ProfileSitesImport.Nat  positivity/graph  ProfileSitesImport.agda:6.1-8.19
+                       3  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+           3  [termination] ProfileSitesImport.double  termination  ProfileSitesImport.agda:13.1-15.38
+                       3  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+           2  [positivity/graph] ProfileSitesImport.Bool  positivity/graph  ProfileSitesImport.agda:10.1-11.20
+                       2  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+           2  [positivity/graph] ProfileSitesImport.double  positivity/graph  ProfileSitesImport.agda:13.1-15.38
+                       2  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+           1  [injectivity] ProfileSites.even?  injectivity  ProfileSites.agda:14.1-24.12
+                       1  ProfileSites.with-18  function  ProfileSites.agda:15.1-5  (with-function of ProfileSites.odd?)
+           1  [positivity/graph] ProfileSites._≡_  positivity/graph  ProfileSites.agda:26.1-27.15
+                       1  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+           1  [positivity/graph] ProfileSites.test  positivity/graph  ProfileSites.agda:29.1-30.12
+                       1  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+           1  [positivity/graph] ProfileSitesImport.two  positivity/graph  ProfileSitesImport.agda:17.1-18.24
+                       1  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+           1  [positivity] ProfileSites.test  positivity  ProfileSites.agda:29.1-30.12
+                       1  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+           1  [positivity] ProfileSitesImport.double  positivity  ProfileSitesImport.agda:13.1-15.38
+                       1  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+           1  [positivity] ProfileSitesImport.two  positivity  ProfileSitesImport.agda:17.1-18.24
+                       1  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+
+sites (22): unfoldings caused
+           112  ProfileSites.even?  function  ProfileSites.agda:14.1-6
+            71  ProfileSites.odd?  function  ProfileSites.agda:15.1-5
+            61  ProfileSitesImport.double  function  ProfileSitesImport.agda:13.1-7
+            41  ProfileSites.test  function  ProfileSites.agda:29.1-5
+            21  ProfileSitesImport.two  function  ProfileSitesImport.agda:17.1-4
+            16  ProfileSites._≡_  datatype  ProfileSites.agda:26.6-9
+             8  ProfileSitesImport.Bool  datatype  ProfileSitesImport.agda:10.6-10
+             8  ProfileSitesImport.Nat  datatype  ProfileSitesImport.agda:6.6-9
+             7  [positivity/graph] ProfileSites.even?  positivity/graph  ProfileSites.agda:14.1-24.12  x1  edges=12 nodes=10  block of 2 (+2 generated), 7 clauses, no data or record
+             6  [termination] ProfileSites.even?  termination  ProfileSites.agda:14.1-24.12  block of 2 (+2 generated), 7 clauses, no data or record
+             4  [positivity] ProfileSites.even?  positivity  ProfileSites.agda:14.1-24.12  block of 2 (+2 generated), 7 clauses, no data or record
+             3  [positivity/graph] ProfileSitesImport.Nat  positivity/graph  ProfileSitesImport.agda:6.1-8.19  x1  edges=1 nodes=1  block of 1, 0 clauses
+             3  [termination] ProfileSitesImport.double  termination  ProfileSitesImport.agda:13.1-15.38  block of 1, 2 clauses, no data or record
+             2  [positivity/graph] ProfileSitesImport.Bool  positivity/graph  ProfileSitesImport.agda:10.1-11.20  x1  edges=0 nodes=0  block of 1, 0 clauses
+             2  [positivity/graph] ProfileSitesImport.double  positivity/graph  ProfileSitesImport.agda:13.1-15.38  x1  edges=3 nodes=2  block of 1, 2 clauses, no data or record
+             1  [injectivity] ProfileSites.even?  injectivity  ProfileSites.agda:14.1-24.12  block of 2 (+2 generated), 7 clauses, no data or record
+             1  [positivity/graph] ProfileSites._≡_  positivity/graph  ProfileSites.agda:26.1-27.15  x1  edges=2 nodes=3  block of 1, 0 clauses
+             1  [positivity/graph] ProfileSites.test  positivity/graph  ProfileSites.agda:29.1-30.12  x1  edges=0 nodes=0  block of 1, 1 clauses, no data or record
+             1  [positivity/graph] ProfileSitesImport.two  positivity/graph  ProfileSitesImport.agda:17.1-18.24  x1  edges=0 nodes=0  block of 1, 1 clauses, no data or record
+             1  [positivity] ProfileSites.test  positivity  ProfileSites.agda:29.1-30.12  block of 1, 1 clauses, no data or record
+             1  [positivity] ProfileSitesImport.double  positivity  ProfileSitesImport.agda:13.1-15.38  block of 1, 2 clauses, no data or record
+             1  [positivity] ProfileSitesImport.two  positivity  ProfileSitesImport.agda:17.1-18.24  block of 1, 1 clauses, no data or record
+
+modules (2): sites, unfoldings caused
+        11         261  ProfileSites.agda
+        11         111  ProfileSitesImport.agda

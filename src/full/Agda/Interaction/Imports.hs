@@ -1202,10 +1202,13 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
   -- checked: a library re-checked for want of an interface would otherwise
   -- add the work of checking itself.  What the project's checking unfolds
   -- is counted wherever it is defined.  The report lists the modules that
-  -- counted.
+  -- counted, and those checked without counting, with the reason.
   counting <- ifNotM PC.countersRequested (pure False) $ do
     projectDir <- runProjectDir (takeDirectory fp)
-    pure $ pathInProject projectDir fp
+    let inside = pathInProject projectDir fp
+    unless inside $ liftIO $ PC.noteUncounted (prettyShow mname) $
+      fp ++ " is outside the project " ++ projectDir
+    pure inside
   when counting $ liftIO $ PC.noteChecked (prettyShow mname)
 
   -- Inside 'withMsgs', so the report is written before the stop is.

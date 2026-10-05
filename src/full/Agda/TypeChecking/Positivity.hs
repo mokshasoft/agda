@@ -38,6 +38,7 @@ import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Patterns.Match ( properlyMatching )
 import Agda.TypeChecking.Positivity.Occurrence
 import Agda.TypeChecking.Pretty
+import Agda.TypeChecking.ProfileCounters (noteDetail, subSite)
 import Agda.TypeChecking.Records
 import Agda.TypeChecking.Reduce
 import Agda.TypeChecking.Substitute
@@ -75,9 +76,21 @@ checkStrictlyPositive mi qset = do
   -- compute the occurrence graph for qs
   let qs = Set.toList qset
   reportSDoc "tc.pos.tick" 100 $ "positivity of" <+> prettyTCM qs
-  g <- buildOccurrenceGraph qset
+  -- For the profile report, which splits this check's cost between
+  -- building the graph and closing it, and gives the sizes that explain
+  -- it.  A size is forced only when the report is being recorded; the
+  -- closure is then forced in its own sub-site rather than wherever it is
+  -- first needed.
+  g <- subSite "positivity/graph" $ do
+    g <- buildOccurrenceGraph qset
+    noteDetail "nodes" $ fromIntegral $ size $ Graph.nodes g
+    noteDetail "edges" $ fromIntegral $ length $ Graph.edges g
+    pure g
   let (gstar, sccs) =
         Graph.gaussJordanFloydWarshallMcNaughtonYamada $ fmap occ g
+  subSite "positivity/closure" $ do
+    noteDetail "closedEdges" $ fromIntegral $ length $ Graph.edges gstar
+    noteDetail "cyclicComponents" $ fromIntegral $ length [ () | CyclicSCC _ <- sccs ]
   reportSDoc "tc.pos.tick" 100 $ "constructed graph"
   reportSLn "tc.pos.graph" 5 $ "Positivity graph: N=" ++ show (size $ Graph.nodes g) ++
                                " E=" ++ show (length $ Graph.edges g)

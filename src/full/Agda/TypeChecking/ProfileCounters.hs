@@ -87,6 +87,7 @@ module Agda.TypeChecking.ProfileCounters
   ( -- * The store
     Counters (..)
   , FrameStats (..)
+  , BlockInfo (..)
   , getCounters
   , countersRequested
     -- * Ticking
@@ -97,19 +98,25 @@ module Agda.TypeChecking.ProfileCounters
     -- * Which modules were checked
   , noteChecked
   , getChecked
+  , noteUncounted
+  , getUncounted
     -- * Sites being checked, and what they cost
   , checkingSite
+  , subSite
+  , noteBlock
+  , noteDetail
   , getInProgress
   , allocationCounter
   ) where
 
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Control.Monad.IO.Class (MonadIO (..))
 
 import Data.Int (Int64)
 import Data.IORef
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, listToMaybe)
 import qualified Data.HashMap.Strict as HMap
+import qualified Data.Map.Strict as MapS
 import qualified Data.Set as Set
 
 import GHC.Conc (getAllocationCounter)
@@ -118,11 +125,12 @@ import System.CPUTime (getCPUTime)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Agda.Syntax.Abstract.Name (QName)
+import Agda.Syntax.Position (Range)
 
 import Agda.Interaction.Options.HasOptions (HasOptions (..))
 import Agda.Interaction.Options.Types (optCountersFile, optCountersFolded)
 import Agda.TypeChecking.Monad.Base
-  ( CheckingFrame (..), MonadTCEnv (..), ProfileSite, TCEnv (..), asksTC )
+  ( CheckingFrame (..), MonadTCEnv (..), ProfileSite (..), TCEnv (..), asksTC )
 import Agda.TypeChecking.Monad.Debug (MonadDebug, hasProfileOption)
 
 import qualified Agda.Utils.ProfileOptions as Profile
@@ -145,6 +153,12 @@ data Counters = Counters
       --   happened: cause, then what was unfolded.
   , cFrames   :: !(HMap.HashMap ProfileSite FrameStats)
       -- ^ Every site whose checking finished, with what it cost.
+  , cBlocks   :: !(HMap.HashMap QName BlockInfo)
+      -- ^ The declaration or mutual block each name of a 'SiteCheck' stands
+      --   for, recorded when it was entered.
+  , cDetails  :: !(HMap.HashMap ProfileSite (MapS.Map String Integer))
+      -- ^ Sizes a check reports about its own work, such as the positivity
+      --   checker's graph, summed over every time the site was entered.
   }
 
 -- | What checking one site cost.
@@ -157,13 +171,34 @@ data FrameStats = FrameStats
   , fsOwnTime  :: !Integer
       -- ^ CPU time, in picoseconds.
   , fsAllTime  :: !Integer
+  , fsEntries  :: !Int
+      -- ^ How many times it was checked.  One for a definition; a sub-site,
+      --   such as the reduction of one call's arguments by the termination
+      --   checker, is entered once per call.
+  }
+
+-- | What a declaration or mutual block is, recorded when its checking
+--   begins.  A report is written after the module is done, from names that
+--   may by then have been read back from an interface, which keeps the
+--   binding site of each name but not the range of the declaration.
+data BlockInfo = BlockInfo
+  { biRange     :: !Range
+      -- ^ The whole declaration or block, first line to last.
+  , biMembers   :: [QName]
+      -- ^ Its names as written by the user, in source order.
+  , biGenerated :: !Int
+      -- ^ Its names made up by Agda: @with@-functions, extended lambdas.
+  , biClauses   :: !Int
+      -- ^ Clauses of all its functions, generated ones included.
+  , biHasData   :: !Bool
+      -- ^ Whether it declares a data or record type.
   }
 
 -- | The site being checked when a tick fired, if any.
 type Cause = Maybe ProfileSite
 
 emptyCounters :: Counters
-emptyCounters = Counters HMap.empty HMap.empty HMap.empty HMap.empty
+emptyCounters = Counters HMap.empty HMap.empty HMap.empty HMap.empty HMap.empty HMap.empty
 
 -- | The counters.  Global because the hot hooks run in 'ReduceM', which is
 --   pure; see the module header.
@@ -270,6 +305,19 @@ noteChecked m = modifyIORef' checked (Set.insert m)
 getChecked :: IO [String]
 getChecked = Set.toList <$> readIORef checked
 
+-- | The modules type-checked in this process that were not counted, each
+--   with the reason, so that a report's list of counted modules can be
+--   squared with the modules the log says were checked.
+uncounted :: IORef (MapS.Map String String)
+uncounted = unsafePerformIO $ newIORef MapS.empty
+{-# NOINLINE uncounted #-}
+
+noteUncounted :: String -> String -> IO ()
+noteUncounted m why = modifyIORef' uncounted (MapS.insert m why)
+
+getUncounted :: IO [(String, String)]
+getUncounted = MapS.toList <$> readIORef uncounted
+
 ---------------------------------------------------------------------------
 -- * Sites being checked, and what they cost
 ---------------------------------------------------------------------------
@@ -328,6 +376,7 @@ checkingSite site m = do
                      , fsAllBytes = fromIntegral allAlloc
                      , fsOwnTime  = allTime - nestedTime
                      , fsAllTime  = allTime
+                     , fsEntries  = 1
                      }
           (cFrames c) }
     writeIORef inProgress parent
@@ -341,4 +390,60 @@ checkingSite site m = do
       , fsAllBytes = fsAllBytes new + fsAllBytes old
       , fsOwnTime  = fsOwnTime new + fsOwnTime old
       , fsAllTime  = fsAllTime new + fsAllTime old
+      , fsEntries  = fsEntries new + fsEntries old
       }
+
+-- | Are the counters of the current module being recorded?  Everything
+--   that only feeds the report is gated on this, so a run without the
+--   report pays for no more than reading the environment.
+recording :: (MonadTCEnv m, HasOptions m, MonadDebug m) => m Bool
+recording = do
+  counting <- asksTC envProfileCounting
+  if counting then countersRequested else pure False
+
+-- | The site being checked, if any.
+innermost :: MonadTCEnv m => m (Maybe ProfileSite)
+innermost = asksTC (fmap cfSite . listToMaybe . envCheckingDefinitions)
+
+-- | Check part of the enclosing site's work as a site of its own, named
+--   @[what] M.f@ after the enclosing site's name.  For the phases of a check
+--   whose cost needs splitting, such as the termination checker's reduction
+--   of call arguments; entered once per call, and reported once, with the
+--   number of entries.  Only while recording: unlike 'checkingSite', which
+--   is entered once per declaration, this may be entered once per call.
+subSite
+  :: (MonadTCEnv m, MonadIO m, HasOptions m, MonadDebug m)
+  => String -> m a -> m a
+subSite what m = recording >>= \case
+  False -> m
+  True  -> innermost >>= \case
+    Just (SiteDefinition q) -> checkingSite (SiteCheck what q) m
+    Just (SiteCheck _ q)    -> checkingSite (SiteCheck what q) m
+    _                       -> m
+
+-- | Record what a declaration or block is, under the name its sites are
+--   named by.  The work after a declaration and the checks after a mutual
+--   block describe the same block; the first is recorded once
+--   (@replace = False@), and the second, which knows the block's generated
+--   names too, replaces it.
+noteBlock
+  :: (MonadTCEnv m, MonadIO m, HasOptions m, MonadDebug m)
+  => Bool -> QName -> m BlockInfo -> m ()
+noteBlock replace q info = whenM recording $ do
+  known <- liftIO $ HMap.member q . cBlocks <$> readIORef counters
+  unless (known && not replace) $ do
+    b <- info
+    let b' = b { biMembers = forceList (biMembers b) }
+    liftIO $ modifyIORef' counters $ \ c -> c { cBlocks = HMap.insert q b' (cBlocks c) }
+  where
+    forceList xs = length xs `seq` xs
+    whenM c k = c >>= \ b -> when b k
+
+-- | Add to a size the site being checked reports about its own work.
+noteDetail
+  :: (MonadTCEnv m, MonadIO m, HasOptions m, MonadDebug m)
+  => String -> Integer -> m ()
+noteDetail key n = recording >>= \ r -> when r $ innermost >>= \case
+  Nothing -> pure ()
+  Just s  -> liftIO $ modifyIORef' counters $ \ c -> c
+    { cDetails = HMap.insertWith (MapS.unionWith (+)) s (MapS.singleton key n) (cDetails c) }

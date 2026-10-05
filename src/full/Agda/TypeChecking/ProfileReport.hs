@@ -65,8 +65,13 @@ import GHC.Clock (getMonotonicTime)
 import System.CPUTime (getCPUTime)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 
+import Agda.Syntax.Abstract.Name (mnameToList, nameBindingSite, qnameName)
 import Agda.Syntax.Common.Pretty (prettyShow)
 import Agda.Syntax.Internal (ModuleName, QName, qnameModule)
+import Agda.Syntax.Position
+  ( Range, continuous, noRange, posLine, rStart', rangeFile, rangeFilePath )
+import Agda.Utils.FileName (filePath)
+import qualified Agda.Utils.Maybe.Strict as Strict
 
 import Agda.Interaction.Options
   ( CommandLineOptions, ReportFormat (..), optCountersFile, optCountersFolded
@@ -112,14 +117,38 @@ data Desc = Desc
       -- ^ Relative to the project, when inside it.
   , dRange  :: String
       -- ^ Empty when the name carries no range that can be trusted.
+  , dLine   :: Maybe Int
+      -- ^ The line the range starts on, for the folded stacks.
+  , dBlock  :: Maybe PC.BlockInfo
+      -- ^ For a check after a declaration or block, what it is.
+  , dWithOf :: Maybe String
+      -- ^ For a @with@-function, the definition it was made for, whose
+      --   range it is given: it has none of its own.
   }
+
+-- | Where a range is: the file and the printed range, with the file made
+--   relative to the project, and the line it starts on.  The file is the
+--   module's source when that is known, and the range's own file when not,
+--   as in a snapshot, which cannot see the module table of an import being
+--   checked.
+locate :: FilePath -> Maybe FilePath -> Range -> (Maybe FilePath, String, Maybe Int)
+locate projectDir msrc r = (relativeTo projectDir <$> src, printed, line)
+  where
+    own     = filePath . rangeFilePath <$> Strict.toLazy (rangeFile r)
+    src     = maybe own Just msrc
+    printed = trustedRange projectDir src r
+    line | null printed = Nothing
+         | otherwise    = fromIntegral . posLine <$> rStart' r
 
 -- | Describe every definition named.
 --
---   The range is the definition's, read off the signature.  The key a count
---   is stored under is whichever occurrence of the name was ticked first,
---   and a name's range is that of the occurrence -- a use site, not where
---   the definition is.
+--   The range is where the name is bound, the definition's.  Not the
+--   name's own range ('getRange'): that is the range of an occurrence, a
+--   use site, and a name read back from an interface -- every name of a
+--   module checked before the one the run ends in -- has none at all.  Only
+--   the binding site is kept in interfaces.  A copy made by a module
+--   application is bound where the original is, so it is located at the
+--   application instead, which tells two copies apart.
 --
 --   The kind is part of the description because the counts mix kinds: a
 --   datatype or a postulate is "unfolded" whenever reduction meets it, which
@@ -131,13 +160,32 @@ describeAll projectDir tbl qs = fmap HMap.fromList $ forM qs $ \ q0 -> do
   def <- either (const Nothing) Just <$> getConstInfo' q0
   let q   = maybe q0 defName def
       src = MapS.findWithDefault Nothing (qnameModule q) sources
+      copy = maybe False defCopy def
+  parent <- withParent (10 :: Int) def
+  let bound | copy, r <- moduleSite (qnameModule q), r /= noRange = r
+            | Just p <- parent = nameBindingSite (qnameName p)
+            | otherwise = nameBindingSite (qnameName q)
+      (file, range, line) = locate projectDir src bound
   pure (q0, Desc
     { dName   = prettyShow q
     , dKind   = maybe "" (defKind . theDef) def
-    , dSource = relativeTo projectDir <$> src
-    , dRange  = trustedRange projectDir src q
+    , dSource = file
+    , dRange  = range
+    , dLine   = line
+    , dBlock  = Nothing
+    , dWithOf = prettyShow <$> parent
     })
   where
+    -- The definition a with-function was made for, through any with-
+    -- functions made for with-functions.
+    withParent 0 _ = pure Nothing
+    withParent n d = case theDef <$> d of
+      Just Function{ funWith = Just p } -> do
+        dp <- either (const Nothing) Just <$> getConstInfo' p
+        case theDef <$> dp of
+          Just Function{ funWith = Just _ } -> withParent (n - 1) dp
+          _                                 -> pure (Just p)
+      _ -> pure Nothing
     -- Looked up once per module rather than once per name: a module
     -- lookup scans the whole file table.
     sources = MapS.fromList
@@ -145,25 +193,45 @@ describeAll projectDir tbl qs = fmap HMap.fromList $ forM qs $ \ q0 -> do
 
 -- | Describe every site named.  A definition is described as above; a
 --   module application by the module it defines; a check after a mutual
---   block, or the work after a declaration, by the first name declared.
+--   block, or the work after a declaration, by the first name declared,
+--   with the range of the whole declaration or block, recorded when its
+--   checking began.
 describeSites
-  :: FilePath -> ModuleFileTable -> HMap.HashMap QName Desc -> [ProfileSite]
+  :: FilePath -> ModuleFileTable -> HMap.HashMap QName PC.BlockInfo
+  -> HMap.HashMap QName Desc -> [ProfileSite]
   -> HMap.HashMap ProfileSite Desc
-describeSites projectDir tbl defs = HMap.fromList . map (\ s -> (s, describe s))
+describeSites projectDir tbl blocks defs = HMap.fromList . map (\ s -> (s, describe s))
   where
     describe = \case
       SiteDefinition q  -> def q
       SiteApplication m -> onModule m
-      s@(SiteCheck c q) -> (def q) { dName = siteLabel s, dKind = c }
-    def q = HMap.lookupDefault (Desc (prettyShow q) "" Nothing "") q defs
+      s@(SiteCheck c q) -> onBlock q (def q) { dName = siteLabel s, dKind = c }
+    def q = HMap.lookupDefault (Desc (prettyShow q) "" Nothing "" Nothing Nothing Nothing) q defs
+    onBlock q d = case HMap.lookup q blocks of
+      Nothing -> d
+      Just b  -> case locate projectDir (sourceOfModule tbl (qnameModule q))
+                        (continuous (PC.biRange b)) of
+        (_, "", _)             -> d { dBlock = Just b }
+        (file, range, line)    -> d { dSource = file, dRange = range, dLine = line
+                                    , dBlock = Just b }
     onModule :: ModuleName -> Desc
     onModule m = Desc
       { dName   = prettyShow m
       , dKind   = "module application"
-      , dSource = relativeTo projectDir <$> src
-      , dRange  = trustedRange projectDir src m
+      , dSource = file
+      , dRange  = range
+      , dLine   = line
+      , dBlock  = Nothing
+      , dWithOf = Nothing
       }
-      where src = sourceOfModule tbl m
+      where
+        (file, range, line) = locate projectDir (sourceOfModule tbl m) (moduleSite m)
+
+-- | Where a module's name is bound: for @module M = N args@, the @M@.
+moduleSite :: ModuleName -> Range
+moduleSite m = case mnameToList m of
+  [] -> noRange
+  xs -> nameBindingSite (last xs)
 
 ---------------------------------------------------------------------------
 -- * Rows
@@ -192,6 +260,11 @@ data CauseRow = CauseRow
   , crTotal :: Int
   , crTop   :: [Row]
       -- ^ What it unfolded most, at most 'topUnfolded' of them.
+  , crTopFunctions :: [Row]
+      -- ^ The functions it unfolded most, at most 'topUnfolded' of them.
+      --   Datatypes and constructors are counted whenever reduction meets
+      --   them, so they crowd the functions, which are what can be changed,
+      --   out of 'crTop'.
   }
 
 -- | How many of a cause's unfolded definitions are listed.  All of them
@@ -199,14 +272,20 @@ data CauseRow = CauseRow
 topUnfolded :: Int
 topUnfolded = 5
 
+-- | How many of a block's names are listed.  The count is given in full.
+blockNames :: Int
+blockNames = 10
+
 causeRows
   :: HMap.HashMap QName Desc -> HMap.HashMap ProfileSite Desc
   -> HMap.HashMap PC.Cause (HMap.HashMap QName Int)
   -> [CauseRow]
 causeRows descs sites m = sortOn key
   [ CauseRow (fmap (sites HMap.!) by) (sum inner)
-      (take topUnfolded (rows descs inner))
+      (take topUnfolded rs)
+      (take topUnfolded [ r | r <- rs, dKind (rDesc r) == "function" ])
   | (by, inner) <- HMap.toList m
+  , let rs = rows descs inner
   ]
   where
     key r = (Down (crTotal r), fmap dName (crCause r), fmap dSource (crCause r))
@@ -221,6 +300,10 @@ data SiteRow = SiteRow
       -- ^ Bytes allocated: its own, and with the sites nested in it.
   , srUnfolded :: Maybe Int
       -- ^ Unfoldings its checking caused.
+  , srEntries  :: Int
+      -- ^ Times it was checked; 0 when it never finished.
+  , srDetails  :: [(String, Integer)]
+      -- ^ Sizes the check reported about its own work.
   }
 
 -- | Every site that was checked to the end or caused unfoldings, except
@@ -239,6 +322,8 @@ siteRows sites cs timeOn allocOn byCause = sortOn key $ filter measured
       , srTime     = if timeOn  then (\ f -> (micros (PC.fsOwnTime f), micros (PC.fsAllTime f))) <$> stats else Nothing
       , srBytes    = if allocOn then (\ f -> (PC.fsOwnBytes f, PC.fsAllBytes f)) <$> stats else Nothing
       , srUnfolded = if byCause then Just (maybe 0 sum (HMap.lookup (Just s) (PC.cCaused cs))) else Nothing
+      , srEntries  = maybe 0 PC.fsEntries stats
+      , srDetails  = maybe [] MapS.toList (HMap.lookup s (PC.cDetails cs))
       }
   | s <- HMap.keys $ HMap.union (() <$ PC.cFrames cs) $
            HMap.fromList [ (s, ()) | Just s <- HMap.keys (PC.cCaused cs), byCause ]
@@ -254,6 +339,30 @@ siteRows sites cs timeOn allocOn byCause = sortOn key $ filter measured
 
 micros :: Integer -> Integer
 micros ps = ps `div` 1000000
+
+-- | The sites summed by the file they are in: what every reader of a
+--   report computes first.  Own shares are summed, so that nothing is
+--   counted twice and the modules add up to the whole.
+data ModuleRow = ModuleRow
+  { mrSource   :: Maybe FilePath
+  , mrSites    :: Int
+  , mrTime     :: Maybe Integer
+  , mrBytes    :: Maybe Int
+  , mrUnfolded :: Maybe Int
+  }
+
+moduleRows :: [SiteRow] -> [ModuleRow]
+moduleRows table = sortOn key
+  [ ModuleRow src (length rs)
+      (sum <$> mapM (fmap fst . srTime) rs)
+      (sum <$> mapM (fmap fst . srBytes) rs)
+      (sum <$> mapM srUnfolded rs)
+  | (src, rs) <- MapS.toList $ MapS.fromListWith (flip (++))
+                   [ (dSource (srDesc r), [r]) | r <- table ]
+  ]
+  where
+    key r = ( Down (fromMaybe 0 (mrTime r)), Down (fromMaybe 0 (mrBytes r))
+            , Down (fromMaybe 0 (mrUnfolded r)), mrSource r )
 
 ---------------------------------------------------------------------------
 -- * Writing the report
@@ -273,6 +382,7 @@ writeProfileCounters done = do
     opts       <- commandLineOptions
     cs         <- liftIO PC.getCounters
     checked    <- liftIO PC.getChecked
+    uncounted  <- liftIO PC.getUncounted
     -- Read before anything else here allocates much.  Only the thread
     -- doing the checking has a meaningful allocation counter, so a
     -- snapshot, taken by another thread, reports no allocation so far.
@@ -298,11 +408,12 @@ writeProfileCounters done = do
           [ () <$ kGet k cs | k <- enabled ] ++
           [ HMap.fromList [ (q, ()) | Right q <- map siteAnchor siteKeys ] ]
     descs <- describeAll projectDir tbl names
-    let sites   = describeSites projectDir tbl descs siteKeys
+    let sites   = describeSites projectDir tbl (PC.cBlocks cs) descs siteKeys
         outFile = fromMaybe "agda-counters.json" (optCountersFile opts)
         listed  = [ (k, rows descs (kGet k cs)) | k <- enabled ]
         causes  = [ causeRows descs sites (PC.cCaused cs) | byCause ]
         table   = siteRows sites cs timeOn allocOn byCause
+        modules = moduleRows table
         -- Innermost first, with what each had cost so far.
         stopped =
           [ ( sites HMap.! cfSite f
@@ -319,15 +430,23 @@ writeProfileCounters done = do
               ++ " the work after each declaration, [highlighting] and [constraints]"
               ++ " (solving its constraints, freezing its metas); and the checks"
               ++ " after a mutual block, such as [positivity] and [termination]."
-              ++ "  Each is named by the first name the declaration or block"
-              ++ " declares.  The sites table gives each"
+              ++ "  Each is named by the first name the user wrote in the declaration"
+              ++ " or block, never a with-function, and has the range of the whole"
+              ++ " declaration or block, with its size.  Some checks are split"
+              ++ " further, such as [positivity/graph] and"
+              ++ " [termination/call-arguments], with the number of times each was"
+              ++ " entered.  The sites table gives each"
               ++ " site's own share and the share including the sites nested in"
               ++ " it: CPU time in microseconds with --profile=definitions, bytes"
               ++ " allocated with --profile=allocation, and unfoldings caused with"
-              ++ " --profile=reduction." ]
+              ++ " --profile=reduction.  The modules table sums the sites' own"
+              ++ " shares by file." ]
           , [ "The unfoldings are also listed by the site whose checking caused"
               ++ " them, each with the " ++ show topUnfolded ++ " definitions it"
-              ++ " unfolded most; work outside every site has no name."
+              ++ " unfolded most, and the " ++ show topUnfolded ++ " functions it"
+              ++ " unfolded most, since datatypes and constructors are counted"
+              ++ " whenever reduction meets them; work outside every site has no"
+              ++ " name."
             | byCause ]
           , [ "Allocated, not live: a heap overflow is about what stays live, but"
               ++ " a site that allocates gigabytes is where to look first."
@@ -356,12 +475,15 @@ writeProfileCounters done = do
               Complete       -> []
           , withComma $ jField 1 "note" (JStr (unwords notes))
           , withComma $ jField 1 "countedModules" (JArr (map JStr checked))
+          , withComma $ jField 1 "uncountedModules" $ JArr
+              [ JObj [ ("name", JStr m), ("reason", JStr why) ] | (m, why) <- uncounted ]
           , case done of
               Complete -> []
               _        -> withComma $ jField 1 "checkingWhenStopped" $ JArr
                 [ JObj $ descJ d
                     ++ [ ("timeMicrosSoFar", JNum (fromIntegral t)) | timeOn ]
-                    ++ [ ("allocatedSoFar", JNum a) | allocNow ]
+                    ++ [ ("allocatedSoFar", if allocNow then JNum a else JNull)
+                       | allocOn ]
                 | (d, t, a) <- stopped ]
           ]
         put $ indent 1 ++ jsonString "counters" ++ ": {"
@@ -374,6 +496,7 @@ writeProfileCounters done = do
         forM_ (zip [0 ..] listed) $ \ (i, (k, rs)) -> section i (kKey k) rowJ rs
         forM_ causes $ section (length listed) "unfoldingsByCause" causeJ
         section (length listed + length causes) "sites" siteJ table
+        section 1 "modules" moduleJ modules
         put $ "\n" ++ indent 1 ++ "}\n}\n"
       ReportText -> do
         put $ unlines notes
@@ -386,6 +509,9 @@ writeProfileCounters done = do
         put $ unlines $
           "" : ("counted modules (" ++ show (length checked) ++ ")")
              : map ("  " ++) checked
+        unless (null uncounted) $ put $ unlines $
+          "" : ("checked, not counted (" ++ show (length uncounted) ++ ")")
+             : [ "  " ++ m ++ ": " ++ why | (m, why) <- uncounted ]
         forM_ listed $ \ (k, rs) -> put $ unlines $
           "" : (kTitle k ++ " (" ++ show (length rs) ++ ")")
              : map (rowT 2) rs
@@ -395,6 +521,8 @@ writeProfileCounters done = do
                [ ("  " ++ padLeft 10 (show (crTotal cr)) ++ "  "
                    ++ maybe "(no site)" descT (crCause cr))
                  : map (rowT 14) (crTop cr)
+                 ++ map (rowT 14) [ r | r <- crTopFunctions cr
+                                      , dName (rDesc r) `notElem` map (dName . rDesc) (crTop cr) ]
                | cr <- crs ]
         put $ unlines $
           "" : ("sites (" ++ show (length table) ++ "): "
@@ -407,8 +535,20 @@ writeProfileCounters done = do
                    , maybe "" (\ (o, a) -> padLeft 15 (show o) ++ padLeft 16 (show a)) (srBytes r)
                    , maybe "" (padLeft 12 . show) (srUnfolded r)
                    ]
-                 ++ "  " ++ descT (srDesc r)
+                 ++ "  " ++ descT (srDesc r) ++ siteExtraT r
                | r <- table ]
+        put $ unlines $
+          "" : ("modules (" ++ show (length modules) ++ "): sites, "
+                  ++ intercalate ", " (concat
+                       [ [ "own CPU us" | timeOn ]
+                       , [ "own bytes" | allocOn ]
+                       , [ "unfoldings caused" | byCause ] ]))
+             : [ "  " ++ padLeft 8 (show (mrSites m))
+                   ++ maybe "" (padLeft 13 . show) (mrTime m)
+                   ++ maybe "" (padLeft 16 . show) (mrBytes m)
+                   ++ maybe "" (padLeft 12 . show) (mrUnfolded m)
+                   ++ "  " ++ fromMaybe "(unknown file)" (mrSource m)
+               | m <- modules ]
     forM_ (optCountersFolded opts) $ \ prefix ->
       writeFolded prefix cs sites stack nested nowTime now
         (timeOn, allocOn, allocNow, byCause)
@@ -427,6 +567,7 @@ writeProfileCounters done = do
       , [ ("kind", JStr (dKind d)) | not (null (dKind d)) ]
       , [ ("source", JStr s) | Just s <- [dSource d] ]
       , [ ("range", JStr (dRange d)) | not (null (dRange d)) ]
+      , [ ("withFunctionOf", JStr p) | Just p <- [dWithOf d] ]
       ]
     rowJ (Row d c) = JObj $ descJ d ++ [ ("count", JNum c) ]
     siteJ r = JObj $ descJ (srDesc r) ++ concat
@@ -437,16 +578,53 @@ writeProfileCounters done = do
           (srBytes r)
       , [ ("unfoldingsCaused", JNum u) | Just u <- [srUnfolded r] ]
       ]
+      ++ [ ("entries", JNum (srEntries r)) | subSiteRow r ]
+      ++ [ ("details", JObj [ (k, JNum (fromIntegral v)) | (k, v) <- srDetails r ])
+         | not (null (srDetails r)) ]
+      ++ [ ("block", blockJ b) | Just b <- [dBlock (srDesc r)] ]
+    blockJ b = JObj
+      [ ("members", JNum (length (PC.biMembers b)))
+      , ("names", JArr [ JStr (prettyShow x) | x <- take blockNames (PC.biMembers b) ])
+      , ("generated", JNum (PC.biGenerated b))
+      , ("clauses", JNum (PC.biClauses b))
+      , ("hasDataOrRecord", JBool (PC.biHasData b))
+      ]
+    moduleJ m = JObj $ concat
+      [ [ ("source", maybe JNull JStr (mrSource m)), ("sites", JNum (mrSites m)) ]
+      , [ ("timeMicros", JNum (fromIntegral t)) | Just t <- [mrTime m] ]
+      , [ ("bytes", JNum b) | Just b <- [mrBytes m] ]
+      , [ ("unfoldingsCaused", JNum u) | Just u <- [mrUnfolded m] ]
+      ]
     causeJ cr = JObj $ concat
       [ maybe [ ("name", JNull) ] descJ (crCause cr)
       , [ ("count", JNum (crTotal cr))
-        , ("unfoldedMost", JArr [ JObj [ ("name", JStr (dName d)), ("count", JNum c) ]
-                                | Row d c <- crTop cr ])
+        , ("unfoldedMost", JArr (map unfoldedJ (crTop cr)))
+        , ("unfoldedMostFunctions", JArr (map unfoldedJ (crTopFunctions cr)))
         ]
       ]
+    unfoldedJ (Row d c) = JObj $
+      ("name", JStr (dName d))
+      : [ ("kind", JStr (dKind d)) | not (null (dKind d)) ]
+      ++ [ ("withFunctionOf", JStr p) | Just p <- [dWithOf d] ]
+      ++ [ ("count", JNum c) ]
+    siteExtraT r = concat $ concat
+      [ [ "  x" ++ show (srEntries r) | subSiteRow r ]
+      , [ "  " ++ unwords [ k ++ "=" ++ show v | (k, v) <- srDetails r ]
+        | not (null (srDetails r)) ]
+      , [ "  " ++ blockT b | Just b <- [dBlock (srDesc r)] ]
+      ]
+    blockT b = "block of " ++ show (length (PC.biMembers b))
+      ++ (if PC.biGenerated b > 0 then " (+" ++ show (PC.biGenerated b) ++ " generated)" else "")
+      ++ ", " ++ show (PC.biClauses b) ++ " clauses"
+      ++ (if PC.biHasData b then "" else ", no data or record")
+    -- Entries are given for the sub-sites, entered once per call.  A
+    -- definition is entered twice, for its signature and its body, which
+    -- says nothing.
+    subSiteRow r = '/' `elem` dKind (srDesc r)
     descT d = dName d
       ++ (if null (dKind d)  then "" else "  " ++ dKind d)
       ++ (if null (dRange d) then "" else "  " ++ dRange d)
+      ++ maybe "" (\ p -> "  (with-function of " ++ p ++ ")") (dWithOf d)
     rowT k (Row d c) = replicate k ' ' ++ padLeft 10 (show c) ++ "  " ++ descT d
     padLeft k s = replicate (max 0 (k - length s)) ' ' ++ s
 
@@ -456,7 +634,8 @@ writeProfileCounters done = do
 --
 --   The sites still being checked when the run stopped are included with
 --   what they had cost so far, which is what a flame graph of a run that
---   died needs most.  Lines are sorted, so two runs diff.  Each stack is
+--   died needs most.  Lines are sorted, so two runs diff.  A frame is a
+--   site's name and the line it starts on, @M.f:120@.  Each stack is
 --   rooted at the site's file, or, when a snapshot cannot tell it, its
 --   module.
 writeFolded
@@ -476,7 +655,10 @@ writeFolded prefix cs sites stack nested nowTime now (timeOn, allocOn, allocNow,
       stackOf p = intercalate ";" $
         fromMaybe (prettyShow (either id qnameModule (siteAnchor (head p))))
           (dSource (sites HMap.! head p))
-        : map (dName . (sites HMap.!)) p
+        : map (frame . (sites HMap.!)) p
+      -- Each frame with the line it starts on, as a flame graph shows no
+      -- more than a frame's name.
+      frame d = dName d ++ maybe "" ((":" ++) . show) (dLine d)
       write :: String -> [(String, Integer)] -> TCM ()
       write measure ls = withOutputSink (prefix ++ "." ++ measure ++ ".folded") $ \ put ->
         put $ unlines [ s ++ " " ++ show v | (s, v) <- sort ls, v > 0 ]
