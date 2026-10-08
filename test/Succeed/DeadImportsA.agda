@@ -20,3 +20,10 @@ record Box : Set where
 module P (a : Arch) where
   z : Arch
   z = a
+
+  z₂ : Arch
+  z₂ = a
+
+module W (a : Arch) where
+  w : Arch
+  w = a

@@ -491,6 +491,12 @@ deadImportItem = \case
   ImportedName   x -> (prettyShow x, getRange x, False)
   ImportedModule x -> (prettyShow x, getRange x, False)
 
+-- | The items of a directive (its @using@ list and renamings).
+deadImportItems :: C.ImportDirective -> [(String, Range, Bool)]
+deadImportItems dir =
+  [ deadImportItem x | Using xs <- [using dir], x <- xs ] ++
+  [ deadImportRenaming r | r <- impRenaming dir ]
+
 -- | A renaming entry: bound as its new name, removed as a whole.
 deadImportRenaming :: C.Renaming -> (String, Range, Bool)
 deadImportRenaming r = (n, getRange r, True)
@@ -1139,16 +1145,14 @@ openModule kind mam cm dir = do
 
   -- --dead-imports: what this statement binds by name, and where, and what
   -- each item names (read off the opened namespace).
-  let resolveItem (n, r, ren) =
-        ( n, r, ren
-        , [ anameName a | (c, as) <- Map.toList (nsNames ns), prettyShow c == n, a <- List1.toList as ] )
+  let opened = [ (prettyShow c, map anameName (List1.toList as)) | (c, as) <- Map.toList (nsNames ns) ]
   whenM (liftIO Log.logEnabled) $ liftIO $ Log.logOpen Log.OpenStmt
     { Log.osModule    = cm
     , Log.osPublic    = isJust (publicOpen dir)
     , Log.osWholesale = case using dir of { UseEverything -> True; Using{} -> False }
-    , Log.osItems     = map resolveItem $
-        [ deadImportItem x | Using xs <- [using dir], x <- xs ] ++
-        [ deadImportRenaming r | r <- impRenaming dir ]
+    , Log.osOpenedNs  = opened
+    , Log.osShown     = Nothing
+    , Log.osItems     = map (Log.resolveOpenItem opened) (deadImportItems dir)
     }
 
   return adir

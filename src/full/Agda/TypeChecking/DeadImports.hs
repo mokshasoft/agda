@@ -84,9 +84,18 @@ deadImportsFor m src occs = do
   when wanted $ do
     let used = usedPairs occs
         quals = qualifiersUsed occs
+    let usedKeys = Set.map fst used
     dead <- fmap concat $ forM opens $ \ st -> do
-      if osPublic st then return [] else do
-        let key = posOf (osModule st)
+      let key = posOf (osModule st)
+      if osPublic st || key == Nothing then return [] else
+       if osWholesale st then
+        -- a wholesale open is dead only as a whole (dropping one renaming
+        -- would open that name under its own name instead), and only if it
+        -- opens no instance
+        if key `Set.member` usedKeys then return [] else do
+          inst <- or <$> mapM isInstanceName (osOpened st)
+          return [ (st, wholeStatement st) | not inst ]
+       else do
         cands <- return [ it | it@(n, _, _, _) <- osItems st, (key, n) `Set.notMember` used ]
         -- an instance is used by instance search, unwritten: keep it
         ds <- filterM' (\ (_, _, _, qs) -> not . or <$> mapM isInstanceName qs) cands
@@ -102,6 +111,13 @@ deadImportsFor m src occs = do
       liftIO $ removeInPlace src quals opens (groupByStmt dead)
   where
     filterM' p = fmap concat . mapM (\ x -> (\ b -> [ x | b ]) <$> p x)
+
+-- | The marker for a statement dead as a whole (a wholesale open).
+wholeStatement :: OpenStmt -> (String, Range, Bool, [QName])
+wholeStatement st = ("", getRange (osModule st), False, [])
+
+isWholeStatement :: (String, Range, Bool, [QName]) -> Bool
+isWholeStatement (n, _, _, _) = null n
 
 isInstanceName :: QName -> TCM Bool
 isInstanceName q = either (const False) (isJust . defInstance) <$> getConstInfo' q
@@ -159,9 +175,10 @@ qualifierText = \case
 record :: FilePath -> String -> (OpenStmt, (String, Range, Bool, [QName])) -> J
 record projectDir m (st, (n, r, ren, _)) = JObj $
   [ ("module", JStr m) ] ++ rangeFields projectDir r ++
-  [ ("name", JStr n)
-  , ("kind", JStr (if ren then "renaming" else "using"))
-  , ("opened", JStr (prettyShow (osModule st))) ]
+  [ ("name", JStr (if null n then shown else n))
+  , ("kind", JStr (if null n then "statement" else if ren then "renaming" else "using"))
+  , ("opened", JStr shown) ]
+  where shown = prettyShow (maybe (osModule st) id (osShown st))
 
 rangeFields :: FilePath -> Range -> [(String, J)]
 rangeFields projectDir r = case (rStart' r, rEnd' r) of
@@ -196,7 +213,11 @@ removeInPlace src quals opens deadByStmt = do
   -- need not become @import M@ to keep @M.x@ working
   let key = posOf . osModule
       deadCount st = maybe 0 length (lookup (key st) [ (key st', ds) | (st', ds) <- deadByStmt ])
-      survives st = osWholesale st || length (osItems st) > deadCount st || osPublic st
+      wholeDead st = any (any isWholeStatement) (lookup (key st) [ (key st', ds) | (st', ds) <- deadByStmt ])
+      survives st
+        | osPublic st    = True
+        | osWholesale st = not (wholeDead st)
+        | otherwise      = length (osItems st) > deadCount st
       keptMods = Set.fromList [ prettyShow (osModule st) | st <- opens, survives st ]
       quals' = quals `Set.difference` keptMods
   let edits = concatMap (stmtEdits txt quals') deadByStmt
@@ -231,7 +252,9 @@ stmtEdits txt quals (st, dead) =
                          -- (an empty `using ()` stays: it means "only these")
                          then [ (T.length (T.dropWhileEnd isBlank (T.take (T.length kw - 8) txt)), close + 1, T.empty) ]
                          else [ (open + 1, close, T.intercalate (T.pack "; ") (kept ren)) ]
-          nothingLeft = not (osWholesale st) && null (kept False) && null (kept True)
+          nothingLeft
+            | osWholesale st = any isWholeStatement dead
+            | otherwise      = null (kept False) && null (kept True)
           modText = T.pack (prettyShow (osModule st))
       in if nothingLeft
            then case stmtSpan (mstart - 1) mend of
@@ -268,13 +291,31 @@ stmtEdits txt quals (st, dead) =
             | otherwise = (False, rest1)
       in if T.pack "nepo" `T.isPrefixOf` rest2
            then let start = ms - (T.length before - T.length rest2) - 4
-                    end   = closeOfStmt me
-                in Just (start, end, isImport)
+                    end   = closeOfStmt start me
+                -- only a statement that starts its line (not `let open M in`)
+                in if startsLine start then Just (start, end, isImport) else Nothing
            else Nothing
     -- the statement ends at its last directive's `)`, or at the end of the line
-    closeOfStmt me =
-      let lastItem = maximum (me : [ b | (_, r, _, _) <- osItems st, Just (_, b) <- [rangeSpan r] ])
-      in min (firstIndexFrom ')' lastItem + 1) (T.length txt)
+    closeOfStmt start me
+      | null (osItems st) = layoutEnd start me
+      | otherwise =
+          let lastItem = maximum (me : [ b | (_, r, _, _) <- osItems st, Just (_, b) <- [rangeSpan r] ])
+          in min (firstIndexFrom ')' lastItem + 1) (T.length txt)
+    -- without directive items (a wholesale open, maybe applied to arguments
+    -- or with `hiding`): the statement runs on over the lines indented more
+    -- than its `open`
+    layoutEnd start me =
+      let col     = start - lineBegin start
+          eol i   = maybe (T.length txt) (+ i) (T.findIndex (== '\n') (T.drop i txt))
+          go e | e >= T.length txt = e
+               | otherwise =
+                   let nxt  = e + 1
+                       line = T.takeWhile (/= '\n') (T.drop nxt txt)
+                       ind  = T.length (T.takeWhile isBlank line)
+                   in if not (T.all isBlank line) && ind > col then go (eol nxt) else e
+      in go (eol me)
+    lineBegin i = maybe 0 (\ k -> i - k) (T.findIndex (== '\n') (T.reverse (T.take i txt)))
+    startsLine i = T.all isBlank (T.take (i - lineBegin i) (T.drop (lineBegin i) txt))
     -- a statement that was the whole line takes the line with it: its
     -- indentation (else it would join the next line and break the layout)
     -- and its newline

@@ -33,6 +33,9 @@ module Agda.Syntax.Scope.NameResolutionLog
   , OpenStmt (..)
   , logOpen
   , takeOpens
+  , amendOpen
+  , osOpened
+  , resolveOpenItem
   ) where
 
 import Data.IORef
@@ -130,6 +133,13 @@ data OpenStmt = OpenStmt
       -- ^ A @public@ re-export: its names serve the importers.
   , osWholesale :: Bool
       -- ^ No @using@ list: it opens everything not hidden.
+  , osOpenedNs  :: [(String, [A.QName])]
+      -- ^ Everything the statement brings into scope, by the name it is
+      --   bound as (consulted for a wholesale statement nothing is used
+      --   through: does it open an instance?).
+  , osShown     :: Maybe C.QName
+      -- ^ For @open M args@: @M@ (the statement opens an anonymous module,
+      --   whose generated name 'osModule' is).
   , osItems     :: [(String, Range, Bool, [A.QName])]
       -- ^ The names its @using@ and @renaming@ directives bind, as bound
       --   (a renaming's new name), with the whole entry's range (for a
@@ -137,6 +147,22 @@ data OpenStmt = OpenStmt
       --   resolves to (so that an instance, used without being written, is
       --   recognised).
   }
+
+-- | Everything an open statement brings into scope.
+osOpened :: OpenStmt -> [A.QName]
+osOpened = concatMap snd . osOpenedNs
+
+-- | A directive item, with what it names among the statement's bindings.
+resolveOpenItem :: [(String, [A.QName])] -> (String, Range, Bool) -> (String, Range, Bool, [A.QName])
+resolveOpenItem ns (n, r, ren) = (n, r, ren, concat [ as | (c, as) <- ns, c == n ])
+
+-- | Change the logged statement whose module name is this one (same range).
+amendOpen :: C.QName -> (OpenStmt -> OpenStmt) -> IO ()
+amendOpen x f = case rangeFile (getRange x) of
+  Strict.Just file -> modifyIORef' openStore $
+    Map.adjust (map (\ o -> if getRange (osModule o) == getRange x then f o else o))
+               (filePath (rangeFilePath file))
+  Strict.Nothing -> pure ()
 
 {-# NOINLINE openStore #-}
 openStore :: IORef (Map.Map FilePath [OpenStmt])

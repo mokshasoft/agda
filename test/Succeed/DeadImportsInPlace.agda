@@ -4,7 +4,10 @@ module DeadImportsInPlace where
 open import DeadImportsA using (Arch; x86; arm; x; Box) renaming (y to y′)
 open import DeadImportsA using (unused)           -- dead: opens only a dead name
 import DeadImportsA as Q                          -- an alias: never reported
-open DeadImportsA.P x86 using (z)                 -- a module application
+open DeadImportsA.P x86 using (z; z₂)             -- an application: z₂ dead
+open DeadImportsA.P arm renaming (z to z′)        -- dead: an application, nothing used
+open DeadImportsA.W                               -- dead: a wholesale open, nothing used
+  arm
 open import DeadImportsA using (module P; unused) -- `module P` keeps its keyword
 open import DeadImportsA as R using (unused)      -- alias used: stays, `using ()`
 

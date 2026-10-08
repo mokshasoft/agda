@@ -1,9 +1,9 @@
 -- --dead-imports: which directive items the module never uses.
 module DeadImportsInPlace where
 
-open import DeadImportsA using (Arch; x86; x; Box)
+open import DeadImportsA using (Arch; x86; arm; x; Box)
 import DeadImportsA as Q                          -- an alias: never reported
-open DeadImportsA.P x86 using (z)                 -- a module application
+open DeadImportsA.P x86 using (z)             -- an application: z₂ dead
 open import DeadImportsA using (module P) -- `module P` keeps its keyword
 open import DeadImportsA as R using ()      -- alias used: stays, `using ()`
 

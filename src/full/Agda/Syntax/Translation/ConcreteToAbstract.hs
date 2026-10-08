@@ -21,7 +21,7 @@ import Control.Applicative  ( liftA2, liftA3 )
 import Control.Monad.Except ( runExceptT, MonadError(..) )
 import Control.Monad.State  ( StateT, execStateT, get, put )
 import Control.Monad.Trans.Maybe
-import Control.Monad.Trans  ( lift )
+import Control.Monad.Trans  ( lift, liftIO )
 
 import Data.Bifunctor
 import Data.Foldable (traverse_)
@@ -59,6 +59,7 @@ import Agda.Syntax.Concrete.Fixity (DoWarn(..))
 import Agda.Syntax.Notation
 import Agda.Syntax.Scope.Base as A
 import Agda.Syntax.Scope.Monad
+import qualified Agda.Syntax.Scope.NameResolutionLog as Log
 import Agda.Syntax.Translation.AbstractToConcrete (ToConcrete, ConOfAbs)
 import Agda.Syntax.DoNotation
 import Agda.Syntax.IdiomBrackets
@@ -320,6 +321,17 @@ checkModuleMacro apply kind r p e x modapp open dir = do
       DontOpen -> return adir'
       DoOpen   -> do
         adir'' <- openModule kind (Just m0) (C.QName x) openDir
+        -- --dead-imports: `open M args using (…)` applies the directive to
+        -- the anonymous module and opens it wholesale; log the statement as
+        -- written
+        when (isNoName x) $ whenM (liftIO Log.logEnabled) $ liftIO $
+          Log.amendOpen (C.QName x) $ \ st -> st
+            { Log.osShown     = Just $ case modapp of
+                C.SectionApp _ _ q _       -> q
+                C.RecordModuleInstance _ q -> q
+            , Log.osWholesale = case using dir of { UseEverything -> True; Using{} -> False }
+            , Log.osItems     = map (Log.resolveOpenItem (Log.osOpenedNs st)) (deadImportItems dir)
+            }
         -- Andreas, 2020-05-14, issue #4656
         -- Keep the more meaningful import directive for highlighting
         -- (the other one is a defaultImportDir).
