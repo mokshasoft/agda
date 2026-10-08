@@ -30,6 +30,9 @@ module Agda.Syntax.Scope.NameResolutionLog
   , setLogEnabled
   , logOccurrence
   , takeOccurrences
+  , OpenStmt (..)
+  , logOpen
+  , takeOpens
   ) where
 
 import Data.IORef
@@ -93,6 +96,7 @@ setLogEnabled :: Bool -> IO ()
 setLogEnabled b = do
   writeIORef enabled b
   writeIORef store Map.empty
+  writeIORef openStore Map.empty
 
 -- | Log an occurrence.  One without a range in a file was not written in
 --   the source, and is dropped.
@@ -110,3 +114,43 @@ logOccurrence o = case (rangeFile r, rStart' r, rEnd' r) of
 takeOccurrences :: FilePath -> IO [Occurrence]
 takeOccurrences fp = atomicModifyIORef' store $ \ m ->
   (Map.delete fp m, maybe [] Map.elems (Map.lookup fp m))
+
+------------------------------------------------------------------------
+-- Open statements, for @--dead-imports@
+
+-- | An @open@ (or @open import@) as the scope checker processed it: what it
+--   brings into scope by name, and where.  The module name's range is the
+--   one the lineage of every name it brings in starts with
+--   ('Agda.Syntax.Scope.Base.Opened'), so a resolution's outermost hop
+--   identifies the statement.
+data OpenStmt = OpenStmt
+  { osModule    :: C.QName
+      -- ^ The module as written in the statement, with its range.
+  , osPublic    :: Bool
+      -- ^ A @public@ re-export: its names serve the importers.
+  , osWholesale :: Bool
+      -- ^ No @using@ list: it opens everything not hidden.
+  , osItems     :: [(String, Range, Bool, [A.QName])]
+      -- ^ The names its @using@ and @renaming@ directives bind, as bound
+      --   (a renaming's new name), with the whole entry's range (for a
+      --   renaming, @a to b@), whether it is a renaming entry, and what it
+      --   resolves to (so that an instance, used without being written, is
+      --   recognised).
+  }
+
+{-# NOINLINE openStore #-}
+openStore :: IORef (Map.Map FilePath [OpenStmt])
+openStore = unsafePerformIO $ newIORef Map.empty
+
+-- | Log an open statement, under the file its module name is written in.
+logOpen :: OpenStmt -> IO ()
+logOpen o = case rangeFile (getRange (osModule o)) of
+  Strict.Just f -> modifyIORef' openStore $
+    Map.insertWith (flip (++)) (filePath (rangeFilePath f)) [o]
+  Strict.Nothing -> pure ()
+
+-- | The open statements logged in a file, removed from the store.
+takeOpens :: FilePath -> IO [OpenStmt]
+takeOpens fp = atomicModifyIORef' openStore $ \ m ->
+  (Map.delete fp m, Map.findWithDefault [] fp m)
+

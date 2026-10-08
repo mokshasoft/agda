@@ -711,6 +711,8 @@ defaultOptions = Options
   , optWideFile              = "agda-wide-sections.json"
   , optWideFormat            = ReportJSON
   , optNameResolutionFile    = Nothing
+  , optDeadImportsFile       = Nothing
+  , optRemoveDeadImports     = False
   , optCountersFile          = Nothing
   , optCountersFormat        = ReportJSON
   , optCountersFolded        = Nothing
@@ -1268,6 +1270,13 @@ countersSnapshotFlag s o = case reads s of
   _ -> throwError $
     "--counters-snapshot expects a non-negative number of seconds, got: " ++ s
 
+removeDeadImportsFlag :: Flag CommandLineOptions
+removeDeadImportsFlag o = return $ o { optRemoveDeadImports = True }
+
+deadImportsFlag :: Maybe FilePath -> Flag CommandLineOptions
+deadImportsFlag s o = return $
+  o { optDeadImportsFile = Just $ fromMaybe "agda-dead-imports.jsonl" s }
+
 nameResolutionReportFlag :: Maybe FilePath -> Flag CommandLineOptions
 nameResolutionReportFlag s o = return $
   o { optNameResolutionFile = Just $ fromMaybe "agda-name-resolution.jsonl" s }
@@ -1555,6 +1564,20 @@ standardOptions =
                      "Defaults to a file (agda-wide-sections.json).")
     , Option []     ["wide-format"] (ReqArg wideFormatFlag "json|text")
                     "format for the --wide-sections report. The default is json."
+    , Option []     ["remove-dead-imports"]
+                    (NoArg removeDeadImportsFlag)
+                    ("rewrite every module checked in this run IN PLACE, without the\n" ++
+                     "names its open/import directives bring into scope and never use\n" ++
+                     "(see --dead-imports). A statement left opening nothing is\n" ++
+                     "deleted, or becomes `import M' if M is still used qualified.\n" ++
+                     "Re-check afterwards: the rewritten modules are checked again.")
+    , Option []     ["dead-imports"]
+                    (OptArg deadImportsFlag "PATH")
+                    ("for every module checked in this run, report the names its\n" ++
+                     "open/import directives bring into scope that the module never\n" ++
+                     "uses (using and renaming items; public re-exports excluded).\n" ++
+                     "JSON lines to PATH, or - for stdout (default:\n" ++
+                     "agda-dead-imports.jsonl). Per module, no entry point needed.")
     , Option []     ["name-resolution-report"]
                     (OptArg nameResolutionReportFlag "PATH")
                     ("for every module checked in this run, report where each name\n" ++

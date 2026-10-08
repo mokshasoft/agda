@@ -3,6 +3,7 @@
 # The cabal test-suite was removed on this branch, so this stands in for it.
 cd "$(dirname "$0")" || exit 1
 AGDA=${AGDA:-$(ls -t dist-newstyle/build/*/*/Agda-*/x/agda/build/agda/agda 2>/dev/null | head -1)}
+AGDA=$(readlink -f "$AGDA")
 [ -x "$AGDA" ] || { echo "no agda binary; run: cabal build exe:agda" >&2; exit 1; }
 MODE=${1:-check}   # check | accept
 # Agda's output is full of Unicode, and GHC encodes it by the locale. Under a
@@ -211,7 +212,7 @@ for t in WriteASTBasic WriteASTTransitive WriteASTRecordFields WriteASTPragmas \
          SearchTypeJSON SearchTypeUnanchored SearchTypeUnanchoredOff \
          SearchTypeHigherOrder SearchTypeLimit WideSections WideSectionsJSON \
          ProfileCountersJSON ProfileCountersText ProfileConversionAlone \
-         WideSectionsUnfold ProfileSites NameResolutionReport; do
+         WideSectionsUnfold ProfileSites NameResolutionReport DeadImports; do
   run_succeed $t
 done
 [ "$MODE" = accept ] || check_sites
@@ -223,19 +224,40 @@ done
 # --name-resolution-report writes JSON lines: every line of the golden must
 # parse on its own, the header included.
 check_jsonl() {
-  local golden=$1 t=$2
+  local golden=$1 t=$2 report=${3:-name-resolution}
   if python3 -c '
 import json, sys
 lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
-assert lines and json.loads(lines[0]) == {"schema": 1, "report": "name-resolution"}
+assert lines and json.loads(lines[0]) == {"schema": 1, "report": sys.argv[2]}
 for l in lines[1:]: json.loads(l)
-' "$golden" 2>/dev/null; then
+' "$golden" "$report" 2>/dev/null; then
     echo "PASS  $t (valid JSON lines)"; pass=$((pass+1))
   else
     echo "FAIL  $t (golden is not valid JSON lines)"; fail=$((fail+1))
   fi
 }
 [ "$MODE" = accept ] || check_jsonl test/Succeed/NameResolutionReport.warn NameResolutionReport
+[ "$MODE" = accept ] || check_jsonl test/Succeed/DeadImports.warn DeadImports dead-imports
+# --remove-dead-imports rewrites the source in place: run it on a copy, compare
+# the result with the golden `.after`, and check that the result still checks.
+run_inplace() {
+  local t=$1 tmp
+  tmp=$(mktemp -d)
+  cp test/Succeed/$t.agda test/Succeed/${t}A.agda "$tmp"/ 2>/dev/null
+  cp test/Succeed/DeadImportsA.agda "$tmp"/ 2>/dev/null
+  ( cd "$tmp" && "$AGDA" --remove-dead-imports "$t.agda" >/dev/null 2>&1 )
+  if [ "$MODE" = accept ]; then
+    cp "$tmp/$t.agda" test/Succeed/$t.after; echo "ACCEPT $t"
+  elif cmp -s "$tmp/$t.agda" test/Succeed/$t.after \
+       && ( cd "$tmp" && "$AGDA" "$t.agda" >/dev/null 2>&1 ); then
+    echo "PASS  $t (rewritten in place, re-checks)"; pass=$((pass+1))
+  else
+    echo "FAIL  $t (in-place rewrite differs from golden or does not re-check)"; fail=$((fail+1))
+    diff "test/Succeed/$t.after" "$tmp/$t.agda" | head -20
+  fi
+  rm -rf "$tmp"
+}
+run_inplace DeadImportsInPlace
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done
 run_fail_whole WideSectionsAbort
 run_fail_whole ProfileCountersAbort

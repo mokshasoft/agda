@@ -82,6 +82,7 @@ module Agda.TypeChecking.NameResolutionReport
 import Control.Monad.IO.Class (liftIO)
 
 import qualified Data.List.NonEmpty as NE
+import Data.Maybe (isJust)
 
 import System.FilePath (takeDirectory)
 import System.IO
@@ -93,6 +94,7 @@ import Agda.Syntax.Scope.Base
 import Agda.Syntax.Scope.NameResolutionLog
 
 import Agda.Interaction.Options.Types (optNameResolutionFile)
+import Agda.TypeChecking.DeadImports (deadImportsFor, deadImportsWanted, startDeadImports)
 import Agda.TypeChecking.AnalysisOutput
 import Agda.TypeChecking.Monad
 
@@ -104,24 +106,28 @@ import qualified Agda.Utils.Maybe.Strict as Strict
 startNameResolutionReport :: TCM ()
 startNameResolutionReport = do
   out <- optNameResolutionFile <$> commandLineOptions
-  liftIO $ setLogEnabled (maybe False (const True) out)
+  dead <- deadImportsWanted
+  liftIO $ setLogEnabled (isJust out || dead)
+  startDeadImports
   case out of
     Nothing -> pure ()
     Just fp -> liftIO $ withSink WriteMode fp $ \ h ->
       hPutStrLn h $ encodeJ $ JObj
         [ ("schema", JNum 1), ("report", JStr "name-resolution") ]
 
--- | After scope checking a module: append its records to the report.
+-- | After scope checking a module: append its records to the report, and
+--   hand them to @--dead-imports@ (which reads the same occurrences).
 writeNameResolutionReport :: TopLevelModuleName -> FilePath -> TCM ()
 writeNameResolutionReport m src = do
   out <- optNameResolutionFile <$> commandLineOptions
+  occs <- liftIO $ takeOccurrences src
   case out of
     Nothing -> pure ()
     Just fp -> do
-      occs <- liftIO $ takeOccurrences src
       projectDir <- runProjectDir (takeDirectory src)
       liftIO $ withSink AppendMode fp $ \ h ->
         mapM_ (hPutStrLn h . encodeJ . record projectDir (prettyShow m)) occs
+  deadImportsFor m src occs
 
 -- | A report spans several modules, so the file is appended to, not
 --   replaced: not 'withOutputSink'.

@@ -484,6 +484,18 @@ logResolution x r = whenM (liftIO Log.logEnabled) $ do
     qualifierOf (C.QName _)  = Nothing
     qualifierOf (C.Qual m q) = Just $ maybe (C.QName m) (C.Qual m) (qualifierOf q)
 
+-- | A directive item as it is bound in scope, with its range
+--   (for @--dead-imports@).
+deadImportItem :: C.ImportedName -> (String, Range, Bool)
+deadImportItem = \case
+  ImportedName   x -> (prettyShow x, getRange x, False)
+  ImportedModule x -> (prettyShow x, getRange x, False)
+
+-- | A renaming entry: bound as its new name, removed as a whole.
+deadImportRenaming :: C.Renaming -> (String, Range, Bool)
+deadImportRenaming r = (n, getRange r, True)
+  where (n, _, _) = deadImportItem (renTo r)
+
 -- | Look up a module in the scope.
 resolveModule :: C.QName -> ScopeM AbstractModule
 resolveModule x = do
@@ -1124,6 +1136,20 @@ openModule kind mam cm dir = do
     case Map.lookup c $ nsNames ns of
       Nothing -> x
       Just ys -> shadowLocal ys x
+
+  -- --dead-imports: what this statement binds by name, and where, and what
+  -- each item names (read off the opened namespace).
+  let resolveItem (n, r, ren) =
+        ( n, r, ren
+        , [ anameName a | (c, as) <- Map.toList (nsNames ns), prettyShow c == n, a <- List1.toList as ] )
+  whenM (liftIO Log.logEnabled) $ liftIO $ Log.logOpen Log.OpenStmt
+    { Log.osModule    = cm
+    , Log.osPublic    = isJust (publicOpen dir)
+    , Log.osWholesale = case using dir of { UseEverything -> True; Using{} -> False }
+    , Log.osItems     = map resolveItem $
+        [ deadImportItem x | Using xs <- [using dir], x <- xs ] ++
+        [ deadImportRenaming r | r <- impRenaming dir ]
+    }
 
   return adir
 

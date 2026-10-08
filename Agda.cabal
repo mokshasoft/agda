@@ -802,7 +802,8 @@ library
       Agda.TypeChecking.Monad.Statistics
       Agda.TypeChecking.Monad.Trace
       Agda.TypeChecking.Monad
-      Agda.TypeChecking.NameResolutionReport
+      Agda.TypeChecking.DeadImports
+    Agda.TypeChecking.NameResolutionReport
       Agda.TypeChecking.Names
       Agda.TypeChecking.Opacity
       Agda.TypeChecking.Patterns.Abstract

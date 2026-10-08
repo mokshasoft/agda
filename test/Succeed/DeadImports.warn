@@ -1,0 +1,4 @@
+{"schema": 1, "report": "dead-imports"}
+{"module": "DeadImports", "file": "DeadImports.agda", "line": 4, "col": 44, "endLine": 4, "endCol": 47, "name": "arm", "kind": "using", "opened": "DeadImportsA"}
+{"module": "DeadImports", "file": "DeadImports.agda", "line": 4, "col": 67, "endLine": 4, "endCol": 74, "name": "y′", "kind": "renaming", "opened": "DeadImportsA"}
+{"module": "DeadImports", "file": "DeadImports.agda", "line": 5, "col": 33, "endLine": 5, "endCol": 39, "name": "unused", "kind": "using", "opened": "DeadImportsA"}

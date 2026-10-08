@@ -130,6 +130,13 @@ data CommandLineOptions = Options
       -- ^ Where to write the name-resolution report
       --   (@--name-resolution-report[=FILE]@); @-@ for stdout.  'Nothing'
       --   when not asked for.
+  , optRemoveDeadImports     :: Bool
+      -- ^ @--remove-dead-imports@: rewrite each checked module's source in
+      --   place, without the names its directives import and never use.
+  , optDeadImportsFile       :: Maybe FilePath
+      -- ^ Where to write the dead-imports report
+      --   (@--dead-imports[=FILE]@); @-@ for stdout.  'Nothing' when not
+      --   asked for.
   , optCountersFile          :: Maybe FilePath
       -- ^ Where to write the per-definition counters collected by
       --   @--profile=reduction|conversion@
