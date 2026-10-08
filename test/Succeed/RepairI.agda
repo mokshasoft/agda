@@ -17,3 +17,7 @@ import RepairH as H
 
 k : Bit
 k = snd (both o) F.∧ H.snd (both o)
+
+-- a fully qualified use through a record-module re-export
+p : RepairF.Pair → Bit
+p q = RepairF.fst q

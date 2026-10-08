@@ -211,15 +211,20 @@ importer txt src fac t occs opens = (intents, List.nub skips, handled)
     quals = map snd qualsAt
     qualsAt = [ (posOf x, q') | o@(Occurrence x _) <- occs, q' <- qual o ]
     qual (Occurrence x what) = case (x, what) of
-      (C.Qual q _, Resolved r qms) ->
+      (C.Qual _ _, Resolved r qms) ->
         let rawName = [ lineageTexts (anameLineage a) | a <- names r ]
             rawQual = [ lineageTexts (amodLineage am) | am <- qms ]
             denotesF = any (\ am -> prettyShow (amodName am) == fac) qms
             hit hs = (\ i -> (i, hs)) <$> crossing (if denotesF then Just fac else Nothing) (map norm hs)
-            hits = mapMaybe hit (rawName ++ rawQual)
-        in case hits of
-             [] -> []
-             ((i, hs) : _) -> [ requalify x q i hs ]
+            hitsN = mapMaybe hit rawName
+            hitsQ = mapMaybe hit rawQual
+            full  = prettyShow x
+            qual' = take (length full - length (prettyShow (C.unqualify x)) - 1) full
+        in case (hitsN, hitsQ) of
+             ((i, hs) : _, _) -> [ requalify x qual' i hs ]
+             ([], _ : _) | '.' `elem` qual' -> [ Left ("a qualified module path crossing the target: " ++ full) ]
+             ([], (i, hs) : _) -> [ requalify x qual' i hs ]
+             _ -> []
       _ -> []
     requalify x q i hs = case span' x of
       Nothing -> Left "a qualified name without a range"
@@ -228,11 +233,13 @@ importer txt src fac t occs opens = (intents, List.nub skips, handled)
         | chainLocal i hs && applied hs -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
             let prefix | chainLocal i hs = aliasF ++ "." ++ tMod t ++ "."
-                       | tLocal t        = prettyShow q ++ "." ++ tMod t ++ "."
+                       | tLocal t        = q ++ "." ++ tMod t ++ "."
                        | otherwise       = aliasX ++ "."
             in Right (Replace src (a, a + T.length qtext) (T.pack prefix), chainLocal i hs)
         where slice = T.take (b - a) (T.drop a txt)
-              qtext = T.pack (prettyShow q ++ ".")
+              -- the whole qualifier as written (`Once.CCC.FrameSemantics`
+              -- in `Once.CCC.FrameSemantics.fs-interp`), not its first part
+              qtext = T.pack (q ++ ".")
     span' x = case (rStart' (getRange x), rEnd' (getRange x)) of
       (Just s, Just e) -> Just (fromIntegral (posPos s) - 1, fromIntegral (posPos e) - 1)
       _ -> Nothing
