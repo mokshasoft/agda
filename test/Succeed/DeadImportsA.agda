@@ -27,3 +27,14 @@ module P (a : Arch) where
 module W (a : Arch) where
   w : Arch
   w = a
+
+record HasArch : Set where
+  field the : Arch
+
+pick : ⦃ HasArch ⦄ → Arch
+pick ⦃ h ⦄ = HasArch.the h
+
+module I (a : Arch) where
+  instance
+    hasArch : HasArch
+    hasArch = record { the = a }

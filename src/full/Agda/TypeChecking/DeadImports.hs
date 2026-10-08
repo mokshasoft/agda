@@ -29,12 +29,15 @@
 
 module Agda.TypeChecking.DeadImports
   ( startDeadImports
+  , finishDeadImports
   , deadImportsWanted
   , deadImportsFor
   ) where
 
 import Control.Monad (forM, unless, when)
 import Control.Monad.IO.Class (liftIO)
+import Data.IORef (IORef, newIORef, modifyIORef', atomicModifyIORef')
+import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (isJust, mapMaybe)
@@ -108,7 +111,7 @@ deadImportsFor m src occs = do
         liftIO $ withSink AppendMode fp $ \ h ->
           mapM_ (hPutStrLn h . encodeJ . record projectDir (prettyShow m)) dead
     when (optRemoveDeadImports o && not (null dead)) $
-      liftIO $ removeInPlace src quals opens (groupByStmt dead)
+      liftIO $ modifyIORef' pendingRewrites (removeInPlace src quals opens (groupByStmt dead) :)
   where
     filterM' p = fmap concat . mapM (\ x -> (\ b -> [ x | b ]) <$> p x)
 
@@ -118,6 +121,17 @@ wholeStatement st = ("", getRange (osModule st), False, [])
 
 isWholeStatement :: (String, Range, Bool, [QName]) -> Bool
 isWholeStatement (n, _, _, _) = null n
+
+-- | The in-place rewrites, applied at the end of the run: rewriting a source
+--   while the run goes on would make Agda check it again.
+{-# NOINLINE pendingRewrites #-}
+pendingRewrites :: IORef [IO ()]
+pendingRewrites = unsafePerformIO $ newIORef []
+
+finishDeadImports :: TCM ()
+finishDeadImports = liftIO $ do
+  rs <- atomicModifyIORef' pendingRewrites (\ rs -> ([], rs))
+  sequence_ (reverse rs)
 
 isInstanceName :: QName -> TCM Bool
 isInstanceName q = either (const False) (isJust . defInstance) <$> getConstInfo' q

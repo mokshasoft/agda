@@ -17,3 +17,9 @@ f _   = Box.unbox (record { unbox = z })
 
 g : Arch
 g = Q.x
+
+open import DeadImportsA using (pick)
+open DeadImportsA.I x86 using (hasArch)           -- an applied instance: kept
+
+e : Arch
+e = pick

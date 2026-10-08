@@ -94,7 +94,7 @@ import Agda.Syntax.Scope.Base
 import Agda.Syntax.Scope.NameResolutionLog
 
 import Agda.Interaction.Options.Types (optNameResolutionFile)
-import Agda.TypeChecking.DeadImports (deadImportsFor, deadImportsWanted, startDeadImports)
+import Agda.TypeChecking.DeadImports (deadImportsWanted, startDeadImports)
 import Agda.TypeChecking.AnalysisOutput
 import Agda.TypeChecking.Monad
 
@@ -116,8 +116,9 @@ startNameResolutionReport = do
         [ ("schema", JNum 1), ("report", JStr "name-resolution") ]
 
 -- | After scope checking a module: append its records to the report, and
---   hand them to @--dead-imports@ (which reads the same occurrences).
-writeNameResolutionReport :: TopLevelModuleName -> FilePath -> TCM ()
+--   return them for @--dead-imports@ (which reads the same occurrences, once
+--   the module is type checked).
+writeNameResolutionReport :: TopLevelModuleName -> FilePath -> TCM [Occurrence]
 writeNameResolutionReport m src = do
   out <- optNameResolutionFile <$> commandLineOptions
   occs <- liftIO $ takeOccurrences src
@@ -127,7 +128,7 @@ writeNameResolutionReport m src = do
       projectDir <- runProjectDir (takeDirectory src)
       liftIO $ withSink AppendMode fp $ \ h ->
         mapM_ (hPutStrLn h . encodeJ . record projectDir (prettyShow m)) occs
-  deadImportsFor m src occs
+  return occs
 
 -- | A report spans several modules, so the file is appended to, not
 --   replaced: not 'withOutputSink'.

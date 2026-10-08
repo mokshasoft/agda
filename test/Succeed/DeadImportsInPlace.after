@@ -21,3 +21,9 @@ h = P.z x86
 
 k : Arch
 k = R.x
+
+open import DeadImportsA using (pick)
+open DeadImportsA.I x86 using (hasArch)           -- an applied instance: kept
+
+e : Arch
+e = pick

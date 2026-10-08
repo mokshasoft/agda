@@ -93,6 +93,7 @@ import Agda.TypeChecking.AnalysisOutput
 import qualified Agda.TypeChecking.ProfileCounters as PC
 import Agda.TypeChecking.NameResolutionReport
   ( startNameResolutionReport, writeNameResolutionReport )
+import Agda.TypeChecking.DeadImports ( deadImportsFor, finishDeadImports )
 import Agda.TypeChecking.WideSections (reportWideSections, withWideSectionsOnAbort)
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
@@ -543,6 +544,10 @@ typeCheckMain mode src = do
   checkModuleName' (srcModuleName src) (srcOrigin src)
 
   mi <- getInterface (srcModuleName src) (MainInterface mode) (Just src)
+
+  -- --remove-dead-imports: the sources are rewritten only now, when no
+  -- module of the run is still to be checked against them.
+  finishDeadImports
 
   stCurrentModule `setTCLens'`
     Just ( iModuleName (miInterface mi)
@@ -1268,7 +1273,7 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
       let topDecls = C.modDecls $ srcModule src
       concreteToAbstract_ (TopLevel (srcOrigin src) mname topDecls)
     reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Finished scope checking."
-    writeNameResolutionReport mname (filePath srcPath)
+    occs <- writeNameResolutionReport mname (filePath srcPath)
 
     let ds    = topLevelDecls topLevel
         scope = topLevelScope topLevel
@@ -1310,6 +1315,10 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
         reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Starting type checking."
         Bench.billTo [Bench.Typing] $ mapM_ checkDeclCached ds `finally_` cacheCurrentLog
         reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Finished type checking."
+
+    -- After type checking: an instance the directives name (a module
+    -- application's copy, too) is in the signature by now.
+    deadImportsFor mname (filePath srcPath) occs
 
     -- Ulf, 2013-11-09: Since we're rethrowing the error, leave it up to the
     -- code that handles that error to reset the state.
