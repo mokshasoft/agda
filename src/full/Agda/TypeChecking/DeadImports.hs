@@ -34,7 +34,7 @@ module Agda.TypeChecking.DeadImports
   , deadImportsFor
   ) where
 
-import Control.Monad (forM, unless, when)
+import Control.Monad (forM, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.IORef (IORef, newIORef, modifyIORef', atomicModifyIORef')
 import System.IO.Unsafe (unsafePerformIO)
@@ -111,7 +111,11 @@ deadImportsFor m src occs = do
         liftIO $ withSink AppendMode fp $ \ h ->
           mapM_ (hPutStrLn h . encodeJ . record projectDir (prettyShow m)) dead
     when (optRemoveDeadImports o && not (null dead)) $
-      liftIO $ modifyIORef' pendingRewrites (removeInPlace src quals opens (groupByStmt dead) :)
+      liftIO $ do
+        -- the edits are computed now (the source is not touched before the
+        -- end of the run) so that nothing of the scope is kept alive
+        e <- planEdits src quals opens (groupByStmt dead)
+        length e `seq` modifyIORef' pendingRewrites (e :)
   where
     filterM' p = fmap concat . mapM (\ x -> (\ b -> [ x | b ]) <$> p x)
 
@@ -125,13 +129,13 @@ isWholeStatement (n, _, _, _) = null n
 -- | The in-place rewrites, applied at the end of the run: rewriting a source
 --   while the run goes on would make Agda check it again.
 {-# NOINLINE pendingRewrites #-}
-pendingRewrites :: IORef [IO ()]
+pendingRewrites :: IORef [(FilePath, [Edit])]
 pendingRewrites = unsafePerformIO $ newIORef []
 
 finishDeadImports :: TCM ()
 finishDeadImports = liftIO $ do
   rs <- atomicModifyIORef' pendingRewrites (\ rs -> ([], rs))
-  sequence_ (reverse rs)
+  mapM_ (uncurry applyEdits) (reverse rs)
 
 isInstanceName :: QName -> TCM Bool
 isInstanceName q = either (const False) (isJust . defInstance) <$> getConstInfo' q
@@ -220,9 +224,22 @@ groupByStmt xs =
 -- | An edit: replace the characters [from, to) (0-based) with a text.
 type Edit = (Int, Int, T.Text)
 
-removeInPlace :: FilePath -> Set.Set String -> [OpenStmt] -> [(OpenStmt, [(String, Range, Bool, [QName])])] -> IO ()
-removeInPlace src quals opens deadByStmt = do
-  txt <- withFile src ReadMode $ \ h -> hSetEncoding h utf8 >> T.hGetContents h >>= \ t -> T.length t `seq` return t
+readSource :: FilePath -> IO T.Text
+readSource src = withFile src ReadMode $ \ h -> hSetEncoding h utf8 >> T.hGetContents h >>= \ t -> T.length t `seq` return t
+
+-- | Apply a file's edits (non-overlapping; applied back to front).
+applyEdits :: FilePath -> [Edit] -> IO ()
+applyEdits _   []    = pure ()
+applyEdits src edits = do
+  txt <- readSource src
+  let txt' = foldr apply txt (List.sortOn (\ (a, _, _) -> a) edits)
+  withFile src WriteMode $ \ h -> hSetEncoding h utf8 >> T.hPutStr h txt'
+  where
+    apply (a, b, new) t = T.take a t <> new <> T.drop b t
+
+planEdits :: FilePath -> Set.Set String -> [OpenStmt] -> [(OpenStmt, [(String, Range, Bool, [QName])])] -> IO (FilePath, [Edit])
+planEdits src quals opens deadByStmt = do
+  txt <- readSource src
   -- a module some statement still opens is in scope: a dead statement on it
   -- need not become @import M@ to keep @M.x@ working
   let key = posOf . osModule
@@ -235,11 +252,8 @@ removeInPlace src quals opens deadByStmt = do
       keptMods = Set.fromList [ prettyShow (osModule st) | st <- opens, survives st ]
       quals' = quals `Set.difference` keptMods
   let edits = concatMap (stmtEdits txt quals') deadByStmt
-  unless (null edits) $ do
-    let txt' = foldr apply txt (List.sortOn (\ (a, _, _) -> a) edits)
-    withFile src WriteMode $ \ h -> hSetEncoding h utf8 >> T.hPutStr h txt'
-  where
-    apply (a, b, new) t = T.take a t <> new <> T.drop b t
+  -- forced: the edits must not hold on to the scope
+  sum [ a + b + T.length t | (a, b, t) <- edits ] `seq` return (src, edits)
 
 -- | The edits for one statement: each directive group (using / renaming)
 --   with a dead item is rewritten to its kept items; a statement left opening
