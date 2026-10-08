@@ -32,6 +32,8 @@ module Agda.TypeChecking.DeadImports
   , finishDeadImports
   , deadImportsWanted
   , deadImportsFor
+    -- * Shared with @--repair-reexports@
+  , Edit, readSource, applyEdits, posOf, isBlank
   ) where
 
 import Control.Monad (forM, when)
@@ -80,10 +82,9 @@ startDeadImports = do
 -- | After scope checking a module: its dead import items, reported and/or
 --   removed.  Takes the module's occurrences (shared with the
 --   name-resolution report) and its logged open statements.
-deadImportsFor :: TopLevelModuleName -> FilePath -> [Occurrence] -> TCM ()
-deadImportsFor m src occs = do
+deadImportsFor :: TopLevelModuleName -> FilePath -> [Occurrence] -> [OpenStmt] -> TCM ()
+deadImportsFor m src occs opens = do
   wanted <- deadImportsWanted
-  opens  <- liftIO $ takeOpens src
   when wanted $ do
     let used = usedPairs occs
         quals = qualifiersUsed occs

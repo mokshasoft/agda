@@ -131,6 +131,9 @@ data CommandLineOptions = Options
       --   (@--name-resolution-report[=FILE]@); @-@ for stdout.  'Nothing'
       --   when not asked for.
   , optRemoveDeadImports     :: Bool
+  , optRepairReexports       :: [(String, Int)]
+    -- ^ @--repair-reexports=M:LINE,…@: the @public@ re-exports to remove,
+    --   repairing the importers checked in the run.
       -- ^ @--remove-dead-imports@: rewrite each checked module's source in
       --   place, without the names its directives import and never use.
   , optDeadImportsFile       :: Maybe FilePath

@@ -36,6 +36,7 @@ module Agda.Syntax.Scope.NameResolutionLog
   , amendOpen
   , osOpened
   , resolveOpenItem
+  , lineageTexts
   ) where
 
 import Data.IORef
@@ -45,6 +46,7 @@ import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Agda.Syntax.Abstract.Name as A
 import qualified Agda.Syntax.Concrete.Name as C
+import Agda.Syntax.Common.Pretty (prettyShow)
 import Agda.Syntax.Position
 import Agda.Syntax.Scope.Base
 
@@ -137,6 +139,10 @@ data OpenStmt = OpenStmt
       -- ^ Everything the statement brings into scope, by the name it is
       --   bound as (consulted for a wholesale statement nothing is used
       --   through: does it open an instance?).
+  , osHops      :: [(String, [String])]
+      -- ^ For each name it binds, the modules its lineage goes through, as
+      --   written, outermost first (this statement's own hop included): which
+      --   re-export a name came through (@--repair-reexports@).
   , osShown     :: Maybe C.QName
       -- ^ For @open M args@: @M@ (the statement opens an anonymous module,
       --   whose generated name 'osModule' is).
@@ -147,6 +153,13 @@ data OpenStmt = OpenStmt
       --   resolves to (so that an instance, used without being written, is
       --   recognised).
   }
+
+-- | A lineage's hops, as written, outermost first.
+lineageTexts :: WhyInScope -> [String]
+lineageTexts = \case
+  Defined     -> []
+  Opened q w  -> prettyShow q : lineageTexts w
+  Applied q w -> prettyShow q : lineageTexts w
 
 -- | Everything an open statement brings into scope.
 osOpened :: OpenStmt -> [A.QName]

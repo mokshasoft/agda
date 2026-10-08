@@ -1,0 +1,18 @@
+-- --repair-reexports: an importer using names through every target.
+module RepairI where
+
+open import RepairF using (both; module Pair)
+import RepairX
+open Pair using (fst)
+open import RepairX using (Bit; o)
+import RepairF as F
+open import RepairG Bit using (Box; module Box)
+open Box using (unbox)
+open import RepairX using (flip)
+
+g : Bit → Bit
+g o = RepairX.flip RepairX.i
+g b = fst (both b)
+
+h : Box → Bit
+h x = flip (unbox x)

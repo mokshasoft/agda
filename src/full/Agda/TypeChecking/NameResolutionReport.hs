@@ -95,6 +95,7 @@ import Agda.Syntax.Scope.NameResolutionLog
 
 import Agda.Interaction.Options.Types (optNameResolutionFile)
 import Agda.TypeChecking.DeadImports (deadImportsWanted, startDeadImports)
+import Agda.TypeChecking.RepairReexports (repairWanted)
 import Agda.TypeChecking.AnalysisOutput
 import Agda.TypeChecking.Monad
 
@@ -107,7 +108,8 @@ startNameResolutionReport :: TCM ()
 startNameResolutionReport = do
   out <- optNameResolutionFile <$> commandLineOptions
   dead <- deadImportsWanted
-  liftIO $ setLogEnabled (isJust out || dead)
+  repair <- repairWanted
+  liftIO $ setLogEnabled (isJust out || dead || repair)
   startDeadImports
   case out of
     Nothing -> pure ()

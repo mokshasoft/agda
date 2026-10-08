@@ -803,6 +803,7 @@ library
       Agda.TypeChecking.Monad.Trace
       Agda.TypeChecking.Monad
       Agda.TypeChecking.DeadImports
+      Agda.TypeChecking.RepairReexports
     Agda.TypeChecking.NameResolutionReport
       Agda.TypeChecking.Names
       Agda.TypeChecking.Opacity

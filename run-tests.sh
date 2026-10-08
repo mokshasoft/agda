@@ -258,6 +258,28 @@ run_inplace() {
   rm -rf "$tmp"
 }
 run_inplace DeadImportsInPlace
+# --repair-reexports: the facades lose their `public`s and the importer imports
+# what it used through them itself; compare every rewritten file with its
+# golden `.after`, and check that the result still checks.
+run_repair() {
+  local tmp ok=1 f
+  tmp=$(mktemp -d)
+  cp test/Succeed/Repair[XFGI].agda "$tmp"/
+  ( cd "$tmp" && "$AGDA" --repair-reexports=RepairF:4,RepairF:9,RepairG:4,RepairG:9 RepairI.agda 2>&1 | grep "^repair-reexports" > repair.out )
+  for f in RepairF RepairG RepairI; do
+    if [ "$MODE" = accept ]; then cp "$tmp/$f.agda" test/Succeed/$f.after
+    elif ! cmp -s "$tmp/$f.agda" test/Succeed/$f.after; then ok=0; diff "test/Succeed/$f.after" "$tmp/$f.agda" | head -20; fi
+  done
+  if [ "$MODE" = accept ]; then cp "$tmp/repair.out" test/Succeed/RepairI.out; echo "ACCEPT RepairReexports"
+  elif [ $ok = 1 ] && cmp -s "$tmp/repair.out" test/Succeed/RepairI.out \
+       && ( cd "$tmp" && rm -rf _build && "$AGDA" RepairI.agda >/dev/null 2>&1 ); then
+    echo "PASS  RepairReexports (rewritten in place, re-checks)"; pass=$((pass+1))
+  else
+    echo "FAIL  RepairReexports"; fail=$((fail+1)); cat "$tmp/repair.out" | head -20
+  fi
+  rm -rf "$tmp"
+}
+run_repair
 for t in DeadCodeInvalidEntry WriteASTInvalidEntry SearchTypeNotInScope; do run_fail $t; done
 run_fail_whole WideSectionsAbort
 run_fail_whole ProfileCountersAbort

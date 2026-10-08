@@ -713,6 +713,7 @@ defaultOptions = Options
   , optNameResolutionFile    = Nothing
   , optDeadImportsFile       = Nothing
   , optRemoveDeadImports     = False
+  , optRepairReexports       = []
   , optCountersFile          = Nothing
   , optCountersFormat        = ReportJSON
   , optCountersFolded        = Nothing
@@ -1273,6 +1274,18 @@ countersSnapshotFlag s o = case reads s of
 removeDeadImportsFlag :: Flag CommandLineOptions
 removeDeadImportsFlag o = return $ o { optRemoveDeadImports = True }
 
+repairReexportsFlag :: String -> Flag CommandLineOptions
+repairReexportsFlag s o = do
+  ts <- mapM target (splitOn s)
+  return $ o { optRepairReexports = optRepairReexports o ++ ts }
+  where
+    splitOn str = case break (== ',') str of
+      (a, [])     -> [a]
+      (a, _ : r)  -> a : splitOn r
+    target t = case break (== ':') t of
+      (m, ':' : l) | not (null m), [(n, "")] <- reads l -> return (m, n)
+      _ -> throwError $ "--repair-reexports: expected MODULE:LINE, got " ++ t
+
 deadImportsFlag :: Maybe FilePath -> Flag CommandLineOptions
 deadImportsFlag s o = return $
   o { optDeadImportsFile = Just $ fromMaybe "agda-dead-imports.jsonl" s }
@@ -1571,6 +1584,13 @@ standardOptions =
                      "(see --dead-imports). A statement left opening nothing is\n" ++
                      "deleted, or becomes `import M' if M is still used qualified.\n" ++
                      "Re-check afterwards: the rewritten modules are checked again.")
+    , Option []     ["repair-reexports"]
+                    (ReqArg repairReexportsFlag "M:LINE,...")
+                    ("remove the `public' of the open statement at LINE of module M,\n" ++
+                     "and rewrite IN PLACE every importer checked in this run so that\n" ++
+                     "it imports what it used through that re-export itself. A\n" ++
+                     "target is applied only if every importer could be repaired.\n" ++
+                     "Check M and all its importers in the run; re-check afterwards.")
     , Option []     ["dead-imports"]
                     (OptArg deadImportsFlag "PATH")
                     ("for every module checked in this run, report the names its\n" ++

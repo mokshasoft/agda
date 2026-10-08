@@ -94,6 +94,8 @@ import qualified Agda.TypeChecking.ProfileCounters as PC
 import Agda.TypeChecking.NameResolutionReport
   ( startNameResolutionReport, writeNameResolutionReport )
 import Agda.TypeChecking.DeadImports ( deadImportsFor, finishDeadImports )
+import Agda.TypeChecking.RepairReexports ( repairFor, finishRepair )
+import qualified Agda.Syntax.Scope.NameResolutionLog as Log
 import Agda.TypeChecking.WideSections (reportWideSections, withWideSectionsOnAbort)
 import qualified Agda.TypeChecking.Monad.Benchmark as Bench
 
@@ -548,6 +550,7 @@ typeCheckMain mode src = do
   -- --remove-dead-imports: the sources are rewritten only now, when no
   -- module of the run is still to be checked against them.
   finishDeadImports
+  finishRepair
 
   stCurrentModule `setTCLens'`
     Just ( iModuleName (miInterface mi)
@@ -1318,7 +1321,9 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
 
     -- After type checking: an instance the directives name (a module
     -- application's copy, too) is in the signature by now.
-    deadImportsFor mname (filePath srcPath) occs
+    opens <- liftIO $ Log.takeOpens (filePath srcPath)
+    deadImportsFor mname (filePath srcPath) occs opens
+    repairFor mname (filePath srcPath) occs opens
 
     -- Ulf, 2013-11-09: Since we're rethrowing the error, leave it up to the
     -- code that handles that error to reset the state.
