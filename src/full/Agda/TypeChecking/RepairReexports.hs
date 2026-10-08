@@ -39,7 +39,7 @@ import Data.Char (isDigit)
 import Data.IORef
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe, isJust, mapMaybe)
+import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import System.IO.Unsafe (unsafePerformIO)
@@ -70,6 +70,9 @@ data Intent
       -- ^ A @using@ group (its items' spans): items to drop, items to add.
   | Insert FilePath Int T.Text
   | Replace FilePath (Int, Int) T.Text
+  | NewOpen FilePath String Int String [T.Text]
+      -- ^ @open import X using (…)@ to add (module, position, indentation,
+      --   names): merged over the targets at the end, one per module.
   deriving (Eq, Ord)
 
 data St = St
@@ -244,7 +247,9 @@ importer txt src fac t occs opens = (intents, List.nub skips)
     (aliasX, haveX) = aliasFor (tMod t)
     (aliasF, haveF) = aliasFor fac
 
+    -- an `open import X …` (there, or being added) binds `X` already
     needImportX = not (tLocal t) && not (null qualIntents) && not haveX
+                  && not (aliasX == tMod t && (not (null neededX) || not (null ownX)))
     needImportF = not haveF && (or [ c | Right (_, _, c) <- uses ] || or [ c | Right (_, c) <- quals ])
     imports = [ importAs (tMod t) aliasX | needImportX ] ++
               [ importAs fac aliasF | needImportF ]
@@ -292,14 +297,37 @@ importer txt src fac t occs opens = (intents, List.nub skips)
           opener | tLocal t  = "open " ++ tMod t
                  | otherwise = "open import " ++ tMod t
           line o its = Insert src end (T.pack ("\n" ++ ind ++ o ++ " using (") <> T.intercalate (T.pack "; ") its <> T.pack ")")
-          insert = [ line opener direct | not (null direct) ] ++
+          -- `open import X using (…)` is gathered over all statements (mergeX)
+          insert = [ line opener direct | not (null direct), tLocal t ] ++
                    [ line ("open " ++ aliasF ++ "." ++ tMod t) chain | not (null chain) ]
       in group ++ insert
+
+    -- what the importer needs from a re-exported top-level module X, from all
+    -- its statements: nothing if it opens X wholesale already, else into its
+    -- own `open import X using (…)` if it has one, else one new statement
+    -- after the first statement it came through
+    neededX = List.nub [ it | (_, it, False) <- used, not (tLocal t) ]
+    ownX    = [ st | st <- opens, not (osPublic st), isNothing (osShown st)
+                   , prettyShow (osModule st) == tMod t ]
+    mergeX
+      | null neededX = []
+      | any osWholesale ownX = []
+      | (st : _) <- [ st | st <- ownX, not (null (spansOf st)) ] =
+          let have = [ T.pack n | (n, _, False, _) <- osItems st ]
+          in [ Group src (spansOf st) [] [ it | it <- neededX, it `notElem` have ] ]
+      | otherwise = case List.sortOn fst [ (k, st) | (k, _, False) <- used, Just st <- [Map.lookup k byKey] ] of
+          ((_, st) : _) ->
+            let ms  = maybe 0 (subtract 1) (posOf (osModule st))
+                me  = maybe ms (\ p -> fromIntegral (posPos p) - 1) (rEnd' (getRange (osModule st)))
+                ind = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt (stmtStart txt ms)) txt))
+            in [ NewOpen src (tMod t) (stmtEnd txt st ms me) ind neededX ]
+          [] -> []
+    spansOf st = [ sp | (_, r, False, _) <- osItems st, Just sp <- [rspan r] ]
     rspan r = case (rStart' r, rEnd' r) of
       (Just s, Just e) -> Just (fromIntegral (posPos s) - 1, fromIntegral (posPos e) - 1)
       _ -> Nothing
 
-    intents = importIntents ++ perStmt ++ qualIntents
+    intents = importIntents ++ perStmt ++ mergeX ++ qualIntents
 
 forceTarget :: Either String Target -> Int
 forceTarget = \case
@@ -313,6 +341,7 @@ forceIntents = sum . map one
       Group f sps ds as -> length f + sum (map (uncurry (+)) (sps ++ ds)) + sum (map T.length as)
       Insert f a x      -> length f + a + T.length x
       Replace f (a, b) x -> length f + a + b + T.length x
+      NewOpen f m a ind xs -> length f + length m + a + length ind + sum (map T.length xs)
 
 -- | The generated name of an applied module, @.#F-1234@, read as @F@.
 norm :: String -> String
@@ -348,13 +377,18 @@ finishRepair = do
       let groups = Map.fromListWith (\ (d1, a1) (d2, a2) -> (d1 ++ d2, a1 ++ a2))
                      [ (sps, (ds, as)) | Group f' sps ds as <- is, f' == f ]
           gEdits = [ groupEdit txt sps (List.nub ds) (List.nub as) | (sps, (ds, as)) <- Map.toList groups ]
-          others = [ (a, a, s) | Insert f' a s <- is, f' == f ] ++
+          -- one new `open import X using (…)` per module, at the first place
+          newOpens = Map.fromListWith (\ (a1, i1, n1) (a2, i2, n2) -> if a1 <= a2 then (a1, i1, n1 ++ n2) else (a2, i2, n2 ++ n1))
+                       [ (m, (a, ind, ns)) | NewOpen f' m a ind ns <- is, f' == f ]
+          opensE = [ (a, a, T.pack ("\n" ++ ind ++ "open import " ++ m ++ " using (") <> T.intercalate (T.pack "; ") (List.nub ns) <> T.pack ")")
+                   | (m, (a, ind, ns)) <- Map.toList newOpens ]
+          others = opensE ++ [ (a, a, s) | Insert f' a s <- is, f' == f ] ++
                    [ (a, b, s) | Replace f' (a, b) s <- is, f' == f ] ++
                    [ e | (f', e) <- pub, f' == f ]
       applyEdits f (gEdits ++ others)
     writeIORef state $ St Map.empty Map.empty Map.empty Map.empty
   where
-    fileOf = \case { Group f _ _ _ -> f; Insert f _ _ -> f; Replace f _ _ -> f }
+    fileOf = \case { Group f _ _ _ -> f; Insert f _ _ -> f; Replace f _ _ -> f; NewOpen f _ _ _ _ -> f }
 
 -- | Rewrite a @using@ group: its items minus the dropped, plus the added.
 groupEdit :: T.Text -> [(Int, Int)] -> [(Int, Int)] -> [T.Text] -> Edit
