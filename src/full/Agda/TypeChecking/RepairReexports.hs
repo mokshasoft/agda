@@ -80,11 +80,12 @@ data St = St
   , stSkips   :: Map.Map TKey [String]
   , stIntents :: Map.Map TKey [Intent]
   , stEdited  :: Map.Map TKey (Set.Set FilePath)
+  , stTouched :: Map.Map TKey (Set.Set (FilePath, Int))
   }
 
 {-# NOINLINE state #-}
 state :: IORef St
-state = unsafePerformIO $ newIORef $ St Map.empty Map.empty Map.empty Map.empty
+state = unsafePerformIO $ newIORef $ St Map.empty Map.empty Map.empty Map.empty Map.empty
 
 repairWanted :: TCM Bool
 repairWanted = not . null . optRepairReexports <$> commandLineOptions
@@ -103,8 +104,10 @@ repairFor mname src occs opens = do
       forceTarget f `seq` modifyIORef' state $ \ s -> s { stTargets = Map.insert k f (stTargets s) }
     St{ stTargets = ts } <- readIORef state
     forM_ [ (k, t) | (k@(m, _), Right t) <- Map.toList ts, m /= me ] $ \ (k@(fac, _), t) -> do
-      let (intents, skips) = importer txt src fac t occs opens
-      forceIntents intents `seq` length (concat skips) `seq` modifyIORef' state $ \ s -> s
+      let (intents, skips, handled) = importer txt src fac t occs opens
+      forceIntents intents `seq` length (concat skips) `seq` sum handled `seq` modifyIORef' state $ \ s -> s
+        { stTouched = if null handled then stTouched s else Map.insertWith Set.union k (Set.fromList [ (src, h) | h <- handled ]) (stTouched s) }
+      modifyIORef' state $ \ s -> s
         { stSkips   = if null skips then stSkips s else Map.insertWith (++) k (map ((me ++ ": ") ++) skips) (stSkips s)
         , stIntents = if null intents then stIntents s else Map.insertWith (++) k intents (stIntents s)
         , stEdited  = if null intents then stEdited s else Map.insertWith Set.union k (Set.singleton src) (stEdited s)
@@ -140,8 +143,8 @@ facade txt src opens (_, line) =
           _ -> Left "the statement has no range"
 
 -- | An importer's repairs for one target, and why it cannot be repaired.
-importer :: T.Text -> FilePath -> String -> Target -> [Occurrence] -> [OpenStmt] -> ([Intent], [String])
-importer txt src fac t occs opens = (intents, List.nub skips)
+importer :: T.Text -> FilePath -> String -> Target -> [Occurrence] -> [OpenStmt] -> ([Intent], [String], [Int])
+importer txt src fac t occs opens = (intents, List.nub skips, handled)
   where
     byKey = Map.fromList [ (k, st) | st <- opens, Just k <- [posOf (osModule st)] ]
     target st = norm (prettyShow (fromMaybe (osModule st) (osShown st)))
@@ -169,13 +172,18 @@ importer txt src fac t occs opens = (intents, List.nub skips)
 
     -- unqualified uses: (statement key, item text, through a chain), or a skip
     uses :: [Either String (Int, T.Text, Bool)]
-    uses = concatMap use occs
+    uses = map snd usesAt
+    usesAt = concatMap use occs
     use (Occurrence x what) = case (x, what) of
       (C.QName _, Resolved r []) ->
-        [ through (anameLineage a) (T.pack (prettyShow (C.unqualify x))) | a <- names r ]
+        [ (posOf x, through (anameLineage a) (T.pack (prettyShow (C.unqualify x)))) | a <- names r ]
       (C.QName _, ModuleName am) ->
-        [ through (amodLineage am) (T.pack ("module " ++ prettyShow x)) ]
+        [ (posOf x, through (amodLineage am) (T.pack ("module " ++ prettyShow x))) ]
       _ -> []
+    -- the occurrences this target rewrites the meaning of: two targets
+    -- touching one occurrence (a chain of re-exports) are not written in
+    -- the same run
+    handled = [ p | (Just p, Right _) <- usesAt ] ++ [ p | (Just p, Right _) <- qualsAt ]
     through w item = case w of
       Opened q _ | Just k <- posOf q, Just st <- Map.lookup k byKey ->
         let hs = lineageTexts w
@@ -200,7 +208,8 @@ importer txt src fac t occs opens = (intents, List.nub skips)
 
     -- qualified uses: only the qualifier, as written, is replaced
     quals :: [Either String (Intent, Bool)]
-    quals = concatMap qual occs
+    quals = map snd qualsAt
+    qualsAt = [ (posOf x, q') | o@(Occurrence x _) <- occs, q' <- qual o ]
     qual (Occurrence x what) = case (x, what) of
       (C.Qual q _, Resolved r qms) ->
         let rawName = [ lineageTexts (anameLineage a) | a <- names r ]
@@ -356,14 +365,23 @@ finishRepair :: TCM ()
 finishRepair = do
   targets <- optRepairReexports <$> commandLineOptions
   unless (null targets) $ liftIO $ do
-    St ts skips intents edited <- readIORef state
+    St ts skips intents edited touched <- readIORef state
+    -- targets touching a common occurrence (a chain of re-exports) are not
+    -- written together: the first is, the rest wait for the next run
+    claimed <- newIORef (Set.empty :: Set.Set (FilePath, Int))
     ok <- fmap concat $ forM targets $ \ k@(m, l) -> do
       let name = m ++ ":" ++ show l
       case Map.lookup k ts of
         Nothing -> [] <$ putStrLn ("repair-reexports: " ++ name ++ ": NOT applied: the module was not checked in this run")
         Just (Left why) -> [] <$ putStrLn ("repair-reexports: " ++ name ++ ": NOT applied: " ++ why)
-        Just (Right t) -> case Map.findWithDefault [] k skips of
+        Just (Right t) -> do
+         let mine = Map.findWithDefault Set.empty k touched
+         taken <- readIORef claimed
+         case Map.findWithDefault [] k skips of
+          _ | not (Set.null (Set.intersection mine taken)) ->
+            [] <$ putStrLn ("repair-reexports: " ++ name ++ ": NOT applied: shares occurrences with a target applied in this run (a chain); run again")
           [] -> do
+            modifyIORef' claimed (Set.union mine)
             putStrLn $ "repair-reexports: " ++ name ++ ": applied, " ++
               show (Set.size (Map.findWithDefault Set.empty k edited)) ++ " importer(s) rewritten"
             return [ (t, Map.findWithDefault [] k intents) ]
@@ -386,7 +404,7 @@ finishRepair = do
                    [ (a, b, s) | Replace f' (a, b) s <- is, f' == f ] ++
                    [ e | (f', e) <- pub, f' == f ]
       applyEdits f (gEdits ++ others)
-    writeIORef state $ St Map.empty Map.empty Map.empty Map.empty
+    writeIORef state $ St Map.empty Map.empty Map.empty Map.empty Map.empty
   where
     fileOf = \case { Group f _ _ _ -> f; Insert f _ _ -> f; Replace f _ _ -> f; NewOpen f _ _ _ _ -> f }
 
