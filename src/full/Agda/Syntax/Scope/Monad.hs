@@ -1154,6 +1154,8 @@ openModule kind mam cm dir = do
     , Log.osHops      = [ (prettyShow c, Log.lineageTexts (anameLineage (List1.head as))) | (c, as) <- Map.toList (nsNames ns) ]
                      ++ [ ("module " ++ prettyShow c, Log.lineageTexts (amodLineage (List1.head as))) | (c, as) <- Map.toList (nsModules ns) ]
     , Log.osShown     = Nothing
+    , Log.osTarget    = prettyShow m
+    , Log.osHiding    = [ (n, r) | x <- hiding dir, let (n, r, _) = deadImportItem x ]
     , Log.osItems     = map (Log.resolveOpenItem opened) (deadImportItems dir)
     }
 

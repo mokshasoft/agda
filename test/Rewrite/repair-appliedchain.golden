@@ -1,0 +1,4 @@
+== run 1: --repair-reexports=G:6
+repair-reexports: G:6: NOT applied:
+  Main: a submodule re-export reached through an applied chain
+== re-check: OK

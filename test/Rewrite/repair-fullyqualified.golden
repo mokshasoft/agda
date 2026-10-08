@@ -1,0 +1,19 @@
+== run 1: --repair-reexports=Lib.F:3,Lib.F:4
+repair-reexports: Lib.F:3: applied, 1 importer(s) rewritten
+repair-reexports: Lib.F:4: NOT applied: it opens Lib.R.P, which is not a submodule of the facade
+== Lib/F.agda (rewritten)
+module Lib.F where
+
+open import Lib.R
+open P public
+
+== Main.agda (rewritten)
+module Main where
+
+import Lib.F
+import Lib.R as R
+
+h : R.P → Set
+h p = Lib.F.car p
+
+== re-check: OK

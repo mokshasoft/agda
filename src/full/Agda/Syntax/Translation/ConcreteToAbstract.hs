@@ -331,6 +331,7 @@ checkModuleMacro apply kind r p e x modapp open dir = do
                 C.RecordModuleInstance _ q -> q
             , Log.osWholesale = case using dir of { UseEverything -> True; Using{} -> False }
             , Log.osItems     = map (Log.resolveOpenItem (Log.osOpenedNs st)) (deadImportItems dir)
+            , Log.osHiding    = [ (n, r) | h <- hiding dir, let (n, r, _) = deadImportItem h ]
             }
         -- Andreas, 2020-05-14, issue #4656
         -- Keep the more meaningful import directive for highlighting

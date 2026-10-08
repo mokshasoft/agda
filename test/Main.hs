@@ -20,6 +20,7 @@ import qualified Interactive.Tests
 import qualified Internal.Tests
 import qualified LaTeXAndHTML.Tests
 import qualified LibSucceed.Tests
+import qualified Rewrite.Tests
 import qualified Succeed.Tests
 import qualified UserManual.Tests
 
@@ -81,6 +82,7 @@ allTests = do
       {- 7 -} sg Compiler.Tests.tests       :
       {- 8 -} sg LibSucceed.Tests.tests     :
       {- 9 -} sg CubicalSucceed.Tests.tests :
+      {- - -} sg Rewrite.Tests.tests        :
       []
   where
   sg = id

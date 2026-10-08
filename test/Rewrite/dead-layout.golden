@@ -1,0 +1,26 @@
+== run 1: --remove-dead-imports
+== Main.agda (rewritten)
+module Main where
+
+open import M
+  using ( a
+        ; c
+        ; needC )
+open import M hiding (a)
+
+k : Set₁
+k = a
+
+l : Set₁
+l = c
+
+m : Set₁
+m = needC
+
+n : Set₁
+n = x
+  where
+    x : Set₁
+    x = Set
+
+== re-check: OK

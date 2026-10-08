@@ -51,7 +51,7 @@ import Agda.Syntax.Scope.Base
 import Agda.Syntax.Scope.NameResolutionLog
 
 import Agda.Interaction.Options.Types (optRepairReexports)
-import Agda.TypeChecking.DeadImports (Edit, readSource, applyEdits, posOf, isBlank)
+import Agda.TypeChecking.DeadImports (Edit, readSource, applyEdits, posOf, isBlank, isInstanceName, groupEdits)
 import Agda.TypeChecking.Monad
 
 type TKey = (String, Int)
@@ -62,6 +62,7 @@ data Target = Target
   , tMod    :: String   -- ^ The re-exported module, as written at the line.
   , tLocal  :: Bool     -- ^ A submodule of the facade, not @open import@.
   , tPublic :: Edit     -- ^ Removing the @public@.
+  , tNames  :: [String] -- ^ What the statement brings in (as bound).
   }
 
 -- | What an importer needs, decided while it was checked.
@@ -95,6 +96,11 @@ repairWanted = not . null . optRepairReexports <$> commandLineOptions
 repairFor :: TopLevelModuleName -> FilePath -> [Occurrence] -> [OpenStmt] -> TCM ()
 repairFor mname src occs opens = do
   targets <- optRepairReexports <$> commandLineOptions
+  -- the directive items naming an instance (after type checking: known)
+  insts <- if null targets then return Set.empty else
+    fmap (Set.fromList . concat) $ forM [ it | st <- opens, it <- osItems st ] $ \ (n, _, _, qs) -> do
+      i <- or <$> mapM isInstanceName qs
+      return [ n | i ]
   unless (null targets) $ liftIO $ do
     txt <- readSource src
     let me = prettyShow mname
@@ -104,7 +110,7 @@ repairFor mname src occs opens = do
       forceTarget f `seq` modifyIORef' state $ \ s -> s { stTargets = Map.insert k f (stTargets s) }
     St{ stTargets = ts } <- readIORef state
     forM_ [ (k, t) | (k@(m, _), Right t) <- Map.toList ts, m /= me ] $ \ (k@(fac, _), t) -> do
-      let (intents, skips, handled) = importer txt src fac t occs opens
+      let (intents, skips, handled) = importer insts txt src fac t occs opens
       forceIntents intents `seq` length (concat skips) `seq` sum handled `seq` modifyIORef' state $ \ s -> s
         { stTouched = if null handled then stTouched s else Map.insertWith Set.union k (Set.fromList [ (src, h) | h <- handled ]) (stTouched s) }
       modifyIORef' state $ \ s -> s
@@ -115,12 +121,14 @@ repairFor mname src occs opens = do
 
 -- | The target statement in its facade.
 facade :: T.Text -> FilePath -> [OpenStmt] -> TKey -> Either String Target
-facade txt src opens (_, line) =
+facade txt src opens (me, line) =
   case [ st | st <- opens, osPublic st, (posLine <$> rStart' (getRange (osModule st))) == Just (fromIntegral line) ] of
     [] -> Left "no public open statement starts at that line"
     (st : _)
       | Just _ <- osShown st -> Left "it re-exports a module application"
       | any (\ (_, _, ren, _) -> ren) (osItems st) -> Left "it renames"
+      | not (importStmtIn txt st) && not ((me ++ ".") `List.isPrefixOf` osTarget st) ->
+          Left ("it opens " ++ osTarget st ++ ", which is not a submodule of the facade")
       | otherwise -> case (posOf (osModule st), rEnd' (getRange (osModule st))) of
           (Just ms, Just me) ->
             let mstart  = ms - 1
@@ -138,13 +146,19 @@ facade txt src opens (_, line) =
                        lineAlone = startsLine txt at && T.all isBlank (T.takeWhile (/= '\n') (T.drop (at + 6) txt))
                        pubEdit | lineAlone = (lineBegin txt at - 1, at + 6 + T.length (T.takeWhile isBlank (T.drop (at + 6) txt)), T.empty)
                                | otherwise = (from, at + 6, T.empty)
-                   in Right $ Target src (prettyShow (osModule st)) (not isImp) pubEdit
+                   in Right $ Target src (prettyShow (osModule st)) (not isImp) pubEdit (map fst (osHops st))
                  _ -> Left "no `public` found in the statement"
           _ -> Left "the statement has no range"
 
+-- | An `open import` (not an open of a module in scope).
+importStmtIn :: T.Text -> OpenStmt -> Bool
+importStmtIn txt st = case posOf (osModule st) of
+  Just ms -> T.pack "import" `T.isSuffixOf` T.dropWhileEnd isBlank (T.take (ms - 1) txt)
+  Nothing -> False
+
 -- | An importer's repairs for one target, and why it cannot be repaired.
-importer :: T.Text -> FilePath -> String -> Target -> [Occurrence] -> [OpenStmt] -> ([Intent], [String], [Int])
-importer txt src fac t occs opens = (intents, List.nub skips, handled)
+importer :: Set.Set String -> T.Text -> FilePath -> String -> Target -> [Occurrence] -> [OpenStmt] -> ([Intent], [String], [Int])
+importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
   where
     byKey = Map.fromList [ (k, st) | st <- opens, Just k <- [posOf (osModule st)] ]
     target st = norm (prettyShow (fromMaybe (osModule st) (osShown st)))
@@ -203,7 +217,11 @@ importer txt src fac t occs opens = (intents, List.nub skips, handled)
       _                    -> []
     toList' = foldr (:) []
 
-    used    = List.nub [ u | Right u <- uses ]
+    -- an instance listed in a crossing directive is used without being
+    -- written: it moves like a used name
+    used    = List.nub ([ u | Right u <- uses ] ++
+                [ (k, T.pack n, False) | (k, st) <- Map.toList byKey
+                                       , (n, _, _, _) <- crossingItems st, n `Set.member` insts ])
     skipped = [ why | Left why <- uses, not (null why) ]
 
     -- qualified uses: only the qualifier, as written, is replaced
@@ -288,10 +306,11 @@ importer txt src fac t occs opens = (intents, List.nub skips, handled)
             [ "no import statement to put an import after" | not (null imports), Nothing <- [importAt] ]
 
     -- per statement: drop its crossing items, add what is used after it
-    stmts = List.nub ([ k | (k, _, _) <- used ] ++ [ k | (k, st) <- Map.toList byKey, not (null (crossingItems st)) ])
+    stmts = List.nub ([ k | (k, _, _) <- used ] ++
+                      [ k | (k, st) <- Map.toList byKey, not (null (crossingItems st)) || not (null (osHiding st)) ])
     crossingItems st =
       [ it | it@(n, _, _, _) <- osItems st
-           , Just hs <- [lookup n (osHops st)]
+           , Just hs <- [maybe (lookup ("module " ++ n) (osHops st)) Just (lookup n (osHops st))]
            , Just _ <- [crossing (Just (target st)) (afterStmt st hs)] ]
     perStmt = concat
       [ stmtIntents k st
@@ -316,7 +335,23 @@ importer txt src fac t occs opens = (intents, List.nub skips, handled)
           -- `open import X using (…)` is gathered over all statements (mergeX)
           insert = [ line opener direct | not (null direct), tLocal t ] ++
                    [ line ("open " ++ aliasF ++ "." ++ tMod t) chain | not (null chain) ]
-      in group ++ insert
+          -- a hidden name the facade no longer exports: the hiding goes
+          hspans = [ sp | (_, r) <- osHiding st, Just sp <- [rspan r] ]
+          hdrops = [ sp | (n, r) <- osHiding st, Just sp <- [rspan r], target st == fac
+                        , n `elem` tNames t || ("module " ++ n) `elem` tNames t ]
+          hiding
+            | null hdrops = []
+            | length hdrops < length hspans = [ Group src hspans hdrops [] ]
+            -- nothing left hidden: `hiding (…)` goes, keyword and all
+            | otherwise =
+                let s0    = minimum (map fst hspans)
+                    e0    = maximum (map snd hspans)
+                    open  = maybe 0 id (List.find (\ j -> T.index txt j == '(') [s0 - 1, s0 - 2 .. 0])
+                    close = maybe (T.length txt) id (List.find (\ j -> T.index txt j == ')') [e0 .. T.length txt - 1])
+                    kw    = T.dropWhileEnd (\ c -> isBlank c || c == '\n') (T.take open txt)
+                    from  = T.length (T.dropWhileEnd isBlank (T.take (T.length kw - 6) txt))
+                in [ Replace src (from, close + 1) T.empty | T.pack "hiding" `T.isSuffixOf` kw ]
+      in group ++ hiding ++ insert
 
     -- what the importer needs from a re-exported top-level module X, from all
     -- its statements: nothing if it opens X wholesale already, else into its
@@ -348,7 +383,7 @@ importer txt src fac t occs opens = (intents, List.nub skips, handled)
 forceTarget :: Either String Target -> Int
 forceTarget = \case
   Left why -> length why
-  Right (Target f m l (a, b, x)) -> length f + length m + fromEnum l + a + b + T.length x
+  Right (Target f m l (a, b, x) ns) -> length f + length m + fromEnum l + a + b + T.length x + sum (map length ns)
 
 forceIntents :: [Intent] -> Int
 forceIntents = sum . map one
@@ -401,7 +436,7 @@ finishRepair = do
       txt <- readSource f
       let groups = Map.fromListWith (\ (d1, a1) (d2, a2) -> (d1 ++ d2, a1 ++ a2))
                      [ (sps, (ds, as)) | Group f' sps ds as <- is, f' == f ]
-          gEdits = [ groupEdit txt sps (List.nub ds) (List.nub as) | (sps, (ds, as)) <- Map.toList groups ]
+          gEdits = concat [ groupEdits txt sps (List.nub ds) (List.nub as) | (sps, (ds, as)) <- Map.toList groups ]
           -- one new `open import X using (…)` per module, at the first place
           newOpens = Map.fromListWith (\ (a1, i1, n1) (a2, i2, n2) -> if a1 <= a2 then (a1, i1, n1 ++ n2) else (a2, i2, n2 ++ n1))
                        [ (m, (a, ind, ns)) | NewOpen f' m a ind ns <- is, f' == f ]
@@ -414,21 +449,6 @@ finishRepair = do
     writeIORef state $ St Map.empty Map.empty Map.empty Map.empty Map.empty
   where
     fileOf = \case { Group f _ _ _ -> f; Insert f _ _ -> f; Replace f _ _ -> f; NewOpen f _ _ _ _ -> f }
-
--- | Rewrite a @using@ group: its items minus the dropped, plus the added.
-groupEdit :: T.Text -> [(Int, Int)] -> [(Int, Int)] -> [T.Text] -> Edit
-groupEdit txt sps drops adds =
-  let s0    = minimum (map fst sps)
-      e0    = maximum (map snd sps)
-      open  = maybe 0 id (List.find (\ j -> T.index txt j == '(') [s0 - 1, s0 - 2 .. 0])
-      close = maybe (T.length txt) id (List.find (\ j -> T.index txt j == ')') [e0 .. T.length txt - 1])
-      kept  = [ slice sp | sp <- List.sort sps, sp `notElem` drops ]
-  in (open + 1, close, T.intercalate (T.pack "; ") (kept ++ adds))
-  where
-    slice (a, b) = let a' = withModuleKeyword a in T.take (b - a') (T.drop a' txt)
-    withModuleKeyword a =
-      let before = T.dropWhileEnd (\ c -> isBlank c || c == '\n') (T.take a txt)
-      in if T.pack "module" `T.isSuffixOf` before then T.length before - 6 else a
 
 ------------------------------------------------------------------------
 -- Statement extents (as in DeadImports)

@@ -143,6 +143,10 @@ data OpenStmt = OpenStmt
       -- ^ For each name it binds, the modules its lineage goes through, as
       --   written, outermost first (this statement's own hop included): which
       --   re-export a name came through (@--repair-reexports@).
+  , osHiding    :: [(String, Range)]
+      -- ^ The names its @hiding@ list names, with their ranges.
+  , osTarget    :: String
+      -- ^ The module the statement opens, resolved (its full name).
   , osShown     :: Maybe C.QName
       -- ^ For @open M args@: @M@ (the statement opens an anonymous module,
       --   whose generated name 'osModule' is).

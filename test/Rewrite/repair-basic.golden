@@ -1,0 +1,60 @@
+== run 1: --repair-reexports=RepairF:4,RepairF:9,RepairG:4,RepairG:9
+repair-reexports: RepairF:4: applied, 1 importer(s) rewritten
+repair-reexports: RepairF:9: applied, 1 importer(s) rewritten
+repair-reexports: RepairG:4: applied, 1 importer(s) rewritten
+repair-reexports: RepairG:9: applied, 1 importer(s) rewritten
+== RepairF.agda (rewritten)
+-- --repair-reexports: a facade re-exporting a module and a record module.
+module RepairF where
+
+open import RepairX
+
+record Pair : Set where
+  field fst snd : Bit
+
+open Pair
+
+both : Bit → Pair
+both b = record { fst = b ; snd = b }
+
+== RepairG.agda (rewritten)
+-- --repair-reexports: a parameterised facade (its importers apply it).
+module RepairG (A : Set) where
+
+open import RepairX
+
+record Box : Set where
+  field unbox : A
+
+open Box
+
+== RepairI.agda (rewritten)
+-- --repair-reexports: an importer using names through every target.
+module RepairI where
+
+open import RepairF using (both; module Pair)
+open import RepairX using (Bit; o; flip)
+open Pair using (fst)
+import RepairF as F
+open import RepairG Bit using (Box; module Box)
+open Box using (unbox)
+
+g : Bit → Bit
+g o = RepairX.flip RepairX.i
+g b = fst (both b)
+
+h : Box → Bit
+h x = flip (unbox x)
+
+open import RepairH using ()
+open F.Pair using (snd)
+import RepairH as H
+
+k : Bit
+k = snd (both o) RepairX.∧ F.Pair.snd (both o)
+
+-- a fully qualified use through a record-module re-export
+p : RepairF.Pair → Bit
+p q = RepairF.Pair.fst q
+
+== re-check: OK

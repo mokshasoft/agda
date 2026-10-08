@@ -1,0 +1,36 @@
+== run 1: --repair-reexports=F:3
+repair-reexports: F:3: applied, 2 importer(s) rewritten
+== F.agda (rewritten)
+module F where
+
+open import X
+
+own : Set₁
+own = Set
+
+== Main.agda (rewritten)
+module Main where
+
+open import F
+open import X using (a)
+
+k : Set₁
+k = a
+
+== Twice.agda (rewritten)
+module Twice where
+
+open import F using ()
+open import X using (a; b)
+open import F using (own)
+
+k : Set₁
+k = a
+
+l : Set₁
+l = b
+
+m : Set₁
+m = own
+
+== re-check: OK

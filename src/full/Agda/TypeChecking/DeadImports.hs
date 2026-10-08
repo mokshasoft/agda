@@ -33,7 +33,7 @@ module Agda.TypeChecking.DeadImports
   , deadImportsWanted
   , deadImportsFor
     -- * Shared with @--repair-reexports@
-  , Edit, readSource, applyEdits, posOf, isBlank
+  , Edit, readSource, applyEdits, posOf, isBlank, isInstanceName, groupEdits
   ) where
 
 import Control.Monad (forM, when)
@@ -280,7 +280,8 @@ stmtEdits txt quals (st, dead) =
                          -- no renaming left: the group goes, keyword and all
                          -- (an empty `using ()` stays: it means "only these")
                          then [ (T.length (T.dropWhileEnd isBlank (T.take (T.length kw - 8) txt)), close + 1, T.empty) ]
-                         else [ (open + 1, close, T.intercalate (T.pack "; ") (kept ren)) ]
+                         else groupEdits txt [ sp | (_, r, _, _) <- its, Just sp <- [rangeSpan r] ]
+                                             [ sp | (_, r, _, _) <- its, Just sp <- [rangeSpan r], Just sp `Set.member` deadRs ] []
           nothingLeft
             | osWholesale st = any isWholeStatement dead
             | otherwise      = null (kept False) && null (kept True)
@@ -364,6 +365,31 @@ stmtEdits txt quals (st, dead) =
       let ws = takeWhile (`notElem` map T.pack ["using", "renaming", "hiding", "public"])
                  (T.words (T.map (\ c -> if c == '(' then ' ' else c) (T.take (b - me) (T.drop me txt))))
       in T.pack "as" `elem` ws
+
+-- | Rewrite a directive's parenthesised list: drop items, append items.
+--   A dropped item goes with ONE separator next to it (the one before it,
+--   or, for a leading item, the one after), so the list keeps its layout;
+--   added items follow the last kept one.  A list left empty is emptied.
+groupEdits :: T.Text -> [(Int, Int)] -> [(Int, Int)] -> [T.Text] -> [Edit]
+groupEdits _ [] _ _ = []
+groupEdits txt sps0 drops adds
+  | null keptIx = [ (open + 1, close, T.intercalate (T.pack "; ") adds) ]
+  | otherwise   =
+      [ (e, e, T.concat [ T.pack "; " <> a | a <- adds ]) | not (null adds), let e = snd (sps !! last keptIx) ] ++
+      [ del i | i <- dropIx ]
+  where
+    sps    = List.sort sps0
+    starts = map (withModuleKeyword . fst) sps
+    ixs    = [0 .. length sps - 1]
+    keptIx = [ i | i <- ixs, (sps !! i) `notElem` drops ]
+    dropIx = [ i | i <- ixs, (sps !! i) `elem` drops ]
+    del i | any (< i) keptIx = (snd (sps !! (i - 1)), snd (sps !! i), T.empty)
+          | otherwise        = (starts !! i, starts !! (i + 1), T.empty)
+    open  = maybe 0 id (List.find (\ j -> T.index txt j == '(') [head starts - 1, head starts - 2 .. 0])
+    close = maybe (T.length txt) id (List.find (\ j -> T.index txt j == ')') [snd (last sps) .. T.length txt - 1])
+    withModuleKeyword a =
+      let before = T.dropWhileEnd isSpaceNl (T.take a txt)
+      in if T.pack "module" `T.isSuffixOf` before then T.length before - 6 else a
 
 isBlank, isSpaceNl :: Char -> Bool
 isBlank   c = c == ' ' || c == '\t'

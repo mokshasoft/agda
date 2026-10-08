@@ -1,0 +1,5 @@
+== run 1: --repair-reexports=F:3,G:3
+repair-reexports: F:3: NOT applied: it renames
+repair-reexports: G:3: NOT applied:
+  Main: renamed: y′
+== re-check: OK

@@ -1,0 +1,30 @@
+== run 1: --repair-reexports=Lib.F:3
+repair-reexports: Lib.F:3: applied, 2 importer(s) rewritten
+== Lib/F.agda (rewritten)
+module Lib.F where
+
+open import Lib.X
+
+== Taken.agda (rewritten)
+module Taken where
+
+import Lib.F as F
+import Lib.X as X′
+import X
+
+w : Set₁
+w = X′.x
+
+v : Set₁
+v = X.z
+
+== Uses.agda (rewritten)
+module Uses where
+
+import Lib.F as F
+import Lib.X as LX
+
+y : Set₁
+y = LX.x
+
+== re-check: OK

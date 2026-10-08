@@ -1,3 +1,5 @@
+== run 1: --remove-dead-imports
+== DeadImportsInPlace.agda (rewritten)
 -- --dead-imports: which directive items the module never uses.
 module DeadImportsInPlace where
 
@@ -27,3 +29,5 @@ open DeadImportsA.I x86 using (hasArch)           -- an applied instance: kept
 
 e : Arch
 e = pick
+
+== re-check: OK

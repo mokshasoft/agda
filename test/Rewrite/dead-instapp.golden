@@ -1,0 +1,11 @@
+== run 1: --remove-dead-imports
+== Main.agda (rewritten)
+module Main where
+
+open import X
+open Width T using (nz; need)
+
+k : Set
+k = need
+
+== re-check: OK

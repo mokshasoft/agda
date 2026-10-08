@@ -1,0 +1,27 @@
+== run 1: --repair-reexports=B:3,C:3
+repair-reexports: B:3: applied, 1 importer(s) rewritten
+repair-reexports: C:3: NOT applied: shares occurrences with a target applied in this run (a chain); run again
+== run 2: --repair-reexports=B:3,C:3
+repair-reexports: B:3: NOT applied: no public open statement starts at that line
+repair-reexports: C:3: applied, 0 importer(s) rewritten
+== B.agda (rewritten)
+module B where
+
+open import A
+
+== C.agda (rewritten)
+module C where
+
+open import B
+
+== Main.agda (rewritten)
+module Main where
+
+open import C using ()
+open import A using (T; t)
+import C as Q
+
+g : T
+g = A.f t
+
+== re-check: OK
