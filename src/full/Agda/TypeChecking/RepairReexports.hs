@@ -94,12 +94,14 @@ repairFor mname src occs opens = do
   unless (null targets) $ liftIO $ do
     txt <- readSource src
     let me = prettyShow mname
-    forM_ [ k | k@(m, _) <- targets, m == me ] $ \ k ->
-      modifyIORef' state $ \ s -> s { stTargets = Map.insert k (facade txt src opens k) (stTargets s) }
+    forM_ [ k | k@(m, _) <- targets, m == me ] $ \ k -> do
+      -- forced: a lazy decision would keep the whole module alive to the end
+      let f = facade txt src opens k
+      forceTarget f `seq` modifyIORef' state $ \ s -> s { stTargets = Map.insert k f (stTargets s) }
     St{ stTargets = ts } <- readIORef state
     forM_ [ (k, t) | (k@(m, _), Right t) <- Map.toList ts, m /= me ] $ \ (k@(fac, _), t) -> do
       let (intents, skips) = importer txt src fac t occs opens
-      modifyIORef' state $ \ s -> s
+      forceIntents intents `seq` length (concat skips) `seq` modifyIORef' state $ \ s -> s
         { stSkips   = if null skips then stSkips s else Map.insertWith (++) k (map ((me ++ ": ") ++) skips) (stSkips s)
         , stIntents = if null intents then stIntents s else Map.insertWith (++) k intents (stIntents s)
         , stEdited  = if null intents then stEdited s else Map.insertWith Set.union k (Set.singleton src) (stEdited s)
@@ -261,6 +263,19 @@ importer txt src fac t occs opens = (intents, List.nub skips)
       _ -> Nothing
 
     intents = perStmt ++ qualIntents ++ importX
+
+forceTarget :: Either String Target -> Int
+forceTarget = \case
+  Left why -> length why
+  Right (Target f m l (a, b, x)) -> length f + length m + fromEnum l + a + b + T.length x
+
+forceIntents :: [Intent] -> Int
+forceIntents = sum . map one
+  where
+    one = \case
+      Group f sps ds as -> length f + sum (map (uncurry (+)) (sps ++ ds)) + sum (map T.length as)
+      Insert f a x      -> length f + a + T.length x
+      Replace f (a, b) x -> length f + a + b + T.length x
 
 -- | The generated name of an applied module, @.#F-1234@, read as @F@.
 norm :: String -> String
