@@ -122,7 +122,8 @@ facade txt src opens (_, line) =
                 before  = T.dropWhileEnd isBlank (T.take mstart txt)
                 isImp   = T.pack "import" `T.isSuffixOf` before
                 end     = stmtEnd txt st mstart mend
-                seg     = T.take (end - mend) (T.drop mend txt)
+                end'    = max end (layoutEnd txt (stmtStart txt mstart) mend)
+                seg     = T.take (end' - mend) (T.drop mend txt)
             in case T.breakOn (T.pack "public") seg of
                  (pre, rest) | not (T.null rest) ->
                    let at   = mend + T.length pre
@@ -148,6 +149,7 @@ importer txt src fac t occs opens = (intents, List.nub skips)
     afterStmt st hs =
       let hs1 = map norm (drop 1 hs)
       in if take 1 hs1 == [target st] && isJust (osShown st) then drop 1 hs1 else hs1
+    applied = any (\ h -> take 2 h == ".#")
 
     -- the hop through the target, in a lineage seen from a statement whose
     -- own hop is the first (k >= 2), or from a qualifier (k >= 1)
@@ -156,15 +158,20 @@ importer txt src fac t occs opens = (intents, List.nub skips)
       where ok i | i == 0    = first == Just fac
                  | otherwise = hs !! (i - 1) == fac
 
-    -- unqualified uses: (statement key, item text), or a skip
-    uses :: [Either String (Int, T.Text)]
+    -- A submodule of the facade reached through a chain (the importer opens
+    -- G, which re-exports the facade): the importer imports the facade
+    -- itself, under an alias, and opens `A.N`.  Not when the facade is applied
+    -- on the way (its submodule is then a copy the importer cannot name).
+    chainLocal i hs = tLocal t && i > 0
+
+    -- unqualified uses: (statement key, item text, through a chain), or a skip
+    uses :: [Either String (Int, T.Text, Bool)]
     uses = concatMap use occs
     use (Occurrence x what) = case (x, what) of
       (C.QName _, Resolved r []) ->
         [ through (anameLineage a) (T.pack (prettyShow (C.unqualify x))) | a <- names r ]
       (C.QName _, ModuleName am) ->
         [ through (amodLineage am) (T.pack ("module " ++ prettyShow x)) ]
-      (C.Qual{}, _) -> []
       _ -> []
     through w item = case w of
       Opened q _ | Just k <- posOf q, Just st <- Map.lookup k byKey ->
@@ -172,9 +179,9 @@ importer txt src fac t occs opens = (intents, List.nub skips)
         in case crossing (Just (target st)) (afterStmt st hs) of
              Nothing -> Left ""
              Just i
-               | tLocal t && i > 0 -> Left "a submodule re-export reached through a chain"
+               | chainLocal i hs && applied (drop 1 hs) -> Left "a submodule re-export reached through an applied chain"
                | any (\ (n, _, ren, _) -> ren && T.pack n == item) (osItems st) -> Left ("renamed: " ++ T.unpack item)
-               | otherwise -> Right (k, item)
+               | otherwise -> Right (k, item, chainLocal i hs)
       _ -> Left ""
 
     names = \case
@@ -188,51 +195,79 @@ importer txt src fac t occs opens = (intents, List.nub skips)
     used    = List.nub [ u | Right u <- uses ]
     skipped = [ why | Left why <- uses, not (null why) ]
 
-    -- qualified uses
-    quals :: [Either String Intent]
+    -- qualified uses: only the qualifier, as written, is replaced
+    quals :: [Either String (Intent, Bool)]
     quals = concatMap qual occs
     qual (Occurrence x what) = case (x, what) of
       (C.Qual q _, Resolved r qms) ->
-        let viaName = [ map norm (lineageTexts (anameLineage a)) | a <- names r ]
-            viaQual = [ map norm (lineageTexts (amodLineage am)) | am <- qms ]
+        let rawName = [ lineageTexts (anameLineage a) | a <- names r ]
+            rawQual = [ lineageTexts (amodLineage am) | am <- qms ]
             denotesF = any (\ am -> prettyShow (amodName am) == fac) qms
-            hit hs = crossing (if denotesF then Just fac else Nothing) hs
-            hits = mapMaybe hit (viaName ++ viaQual)
+            hit hs = (\ i -> (i, hs)) <$> crossing (if denotesF then Just fac else Nothing) (map norm hs)
+            hits = mapMaybe hit (rawName ++ rawQual)
         in case hits of
              [] -> []
-             (i : _) -> [ requalify x q i ]
+             ((i, hs) : _) -> [ requalify x q i hs ]
       _ -> []
-    requalify x q i = case span' x of
+    requalify x q i hs = case span' x of
       Nothing -> Left "a qualified name without a range"
       Just (a, b)
-        | T.take (b - a) (T.drop a txt) /= T.pack (prettyShow x) -> Left ("a qualified operator: " ++ prettyShow x)
-        | tLocal t && i > 0 -> Left "a submodule re-export reached through a chain"
+        | not (qtext `T.isPrefixOf` slice) -> Left ("a qualified name written otherwise: " ++ T.unpack slice)
+        | chainLocal i hs && applied hs -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
-            let rest = drop (length (prettyShow q) + 1) (prettyShow x)
-                new | tLocal t  = prettyShow q ++ "." ++ tMod t ++ "." ++ rest
-                    | otherwise = tMod t ++ "." ++ rest
-            in Right (Replace src (a, b) (T.pack new))
+            let prefix | chainLocal i hs = aliasF ++ "." ++ tMod t ++ "."
+                       | tLocal t        = prettyShow q ++ "." ++ tMod t ++ "."
+                       | otherwise       = aliasX ++ "."
+            in Right (Replace src (a, a + T.length qtext) (T.pack prefix), chainLocal i hs)
+        where slice = T.take (b - a) (T.drop a txt)
+              qtext = T.pack (prettyShow q ++ ".")
     span' x = case (rStart' (getRange x), rEnd' (getRange x)) of
       (Just s, Just e) -> Just (fromIntegral (posPos s) - 1, fromIntegral (posPos e) - 1)
       _ -> Nothing
 
-    qualIntents = [ i | Right i <- quals ]
-    -- `X.x` needs `import X`
-    importX | tLocal t || null qualIntents = []
-            | otherwise = case importOfFacade of
-                Just at -> [ Insert src at (T.pack ("\n" ++ indentAt at ++ "import " ++ tMod t)) ]
-                Nothing -> []
-    importOfFacade =
-      let (pre, rest) = T.breakOn (T.pack ("import " ++ fac)) txt
-      in if T.null rest then Nothing
-         else let s0 = T.length pre in Just (layoutEnd txt (lineBegin txt s0) (s0 + 7 + length fac))
+    qualIntents = [ i | Right (i, _) <- quals ]
+
+    -- aliases: an existing `import M as Q` is reused, else the last component
+    -- of the module's name, primed until no qualifier of the file uses it
+    aliasFor m = case T.breakOn (T.pack ("import " ++ m ++ " as ")) txt of
+      (pre, rest) | not (T.null rest) ->
+        (T.unpack (T.takeWhile (\ c -> not (isBlank c) && c /= '\n')
+                    (T.drop (T.length pre + length m + 11) txt)), True)
+      _ -> (fresh (lastComponent m), False)
+    lastComponent m = reverse (takeWhile (/= '.') (reverse m))
+    fresh a | taken a   = fresh (a ++ "′")
+            | otherwise = a
+    taken a = any (\ i -> i == 0 || boundary (T.index txt (i - 1)))
+                  [ T.length pre | (pre, _) <- T.breakOnAll (T.pack (a ++ ".")) txt ]
+              || T.pack ("as " ++ a) `T.isInfixOf` txt || T.pack ("module " ++ a ++ " ") `T.isInfixOf` txt
+    boundary c = isBlank c || c `elem` ("\n(){}[];⦃⦄@" :: String)
+    (aliasX, haveX) = aliasFor (tMod t)
+    (aliasF, haveF) = aliasFor fac
+
+    needImportX = not (tLocal t) && not (null qualIntents) && not haveX
+    needImportF = not haveF && (or [ c | Right (_, _, c) <- uses ] || or [ c | Right (_, c) <- quals ])
+    imports = [ importAs (tMod t) aliasX | needImportX ] ++
+              [ importAs fac aliasF | needImportF ]
+    importAs m a | a == m    = "import " ++ m
+                 | otherwise = "import " ++ m ++ " as " ++ a
+    importAt =
+      case [ T.length pre | (pre, _) <- T.breakOnAll (T.pack ("import " ++ fac)) txt ] ++ firstImport of
+        (s0 : _) -> Just (layoutEnd txt (lineBegin txt s0) s0)
+        []       -> Nothing
+    firstImport = [ o | (o, l) <- lineStarts, any (`T.isPrefixOf` l) [T.pack "import ", T.pack "open import "] ]
+    lineStarts = scanOffsets 0 (T.lines txt)
+    scanOffsets _ [] = []
+    scanOffsets o (l : ls) = (o, l) : scanOffsets (o + T.length l + 1) ls
     indentAt at = let b = lineBegin txt (at - 1) in T.unpack (T.takeWhile isBlank (T.drop b txt))
+    importIntents = case importAt of
+      Just at -> [ Insert src at (T.pack ("\n" ++ indentAt at ++ imp)) | imp <- imports ]
+      Nothing -> []
 
     skips = skipped ++ [ w | Left w <- quals ] ++
-            [ "no import of the facade to put `import X` after" | not (tLocal t), not (null qualIntents), Nothing <- [importOfFacade] ]
+            [ "no import statement to put an import after" | not (null imports), Nothing <- [importAt] ]
 
     -- per statement: drop its crossing items, add what is used after it
-    stmts = List.nub ([ k | (k, _) <- used ] ++ [ k | (k, st) <- Map.toList byKey, not (null (crossingItems st)) ])
+    stmts = List.nub ([ k | (k, _, _) <- used ] ++ [ k | (k, st) <- Map.toList byKey, not (null (crossingItems st)) ])
     crossingItems st =
       [ it | it@(n, _, _, _) <- osItems st
            , Just hs <- [lookup n (osHops st)]
@@ -241,12 +276,13 @@ importer txt src fac t occs opens = (intents, List.nub skips)
       [ stmtIntents k st
       | k <- stmts, Just st <- [Map.lookup k byKey] ]
     stmtIntents k st =
-      let items  = [ it | (k', it) <- used, k' == k ]
+      let direct = [ it | (k', it, False) <- used, k' == k ]
+          chain  = [ it | (k', it, True) <- used, k' == k ]
           spans  = [ sp | (_, r, False, _) <- osItems st, Just sp <- [rspan r] ]
           drops  = [ sp | (_, r, _, _) <- crossingItems st, Just sp <- [rspan r] ]
           modItem = T.pack ("module " ++ tMod t)
           hasMod = any (\ (n, _, _, _) -> T.pack n == modItem) (osItems st)
-          adds   = [ modItem | tLocal t, not (null items), not (osWholesale st), not hasMod ]
+          adds   = [ modItem | tLocal t, not (null direct), not (osWholesale st), not hasMod ]
           group  = [ Group src spans drops adds | not (null spans), not (null drops && null adds) ]
           ms     = maybe 0 (subtract 1) (posOf (osModule st))
           me     = maybe ms (\ p -> fromIntegral (posPos p) - 1) (rEnd' (getRange (osModule st)))
@@ -255,14 +291,15 @@ importer txt src fac t occs opens = (intents, List.nub skips)
           ind    = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt start) txt))
           opener | tLocal t  = "open " ++ tMod t
                  | otherwise = "open import " ++ tMod t
-          insert = [ Insert src end (T.pack ("\n" ++ ind ++ opener ++ " using (") <> T.intercalate (T.pack "; ") items <> T.pack ")")
-                   | not (null items) ]
+          line o its = Insert src end (T.pack ("\n" ++ ind ++ o ++ " using (") <> T.intercalate (T.pack "; ") its <> T.pack ")")
+          insert = [ line opener direct | not (null direct) ] ++
+                   [ line ("open " ++ aliasF ++ "." ++ tMod t) chain | not (null chain) ]
       in group ++ insert
     rspan r = case (rStart' r, rEnd' r) of
       (Just s, Just e) -> Just (fromIntegral (posPos s) - 1, fromIntegral (posPos e) - 1)
       _ -> Nothing
 
-    intents = perStmt ++ qualIntents ++ importX
+    intents = importIntents ++ perStmt ++ qualIntents
 
 forceTarget :: Either String Target -> Int
 forceTarget = \case

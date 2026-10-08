@@ -264,7 +264,7 @@ run_inplace DeadImportsInPlace
 run_repair() {
   local tmp ok=1 f
   tmp=$(mktemp -d)
-  cp test/Succeed/Repair[XFGI].agda "$tmp"/
+  cp test/Succeed/Repair[XFGHI].agda "$tmp"/
   ( cd "$tmp" && "$AGDA" --repair-reexports=RepairF:4,RepairF:9,RepairG:4,RepairG:9 RepairI.agda 2>&1 | grep "^repair-reexports" > repair.out )
   for f in RepairF RepairG RepairI; do
     if [ "$MODE" = accept ]; then cp "$tmp/$f.agda" test/Succeed/$f.after

@@ -11,3 +11,9 @@ g b = fst (both b)
 
 h : Box → Bit
 h x = flip (unbox x)
+
+open import RepairH using (snd)
+import RepairH as H
+
+k : Bit
+k = snd (both o) F.∧ H.snd (both o)

@@ -16,3 +16,10 @@ g b = fst (both b)
 
 h : Box → Bit
 h x = flip (unbox x)
+
+open import RepairH using ()
+open F.Pair using (snd)
+import RepairH as H
+
+k : Bit
+k = snd (both o) RepairX.∧ F.Pair.snd (both o)

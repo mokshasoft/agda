@@ -7,3 +7,7 @@ data Bit : Set where
 flip : Bit → Bit
 flip o = i
 flip i = o
+
+_∧_ : Bit → Bit → Bit
+i ∧ i = i
+_ ∧ _ = o
