@@ -1,0 +1,38 @@
+== run 1: --repair-reexports=F:3,Main:9
+repair-reexports: F:3: applied, 1 importer(s) rewritten
+repair-reexports: Main:9: applied, 0 importer(s) rewritten
+== F.agda (rewritten)
+module F where
+
+open import X
+
+f : Set
+f = T
+
+== Main.agda (rewritten)
+-- every name the facade re-exports is hidden (as Once.TypeCheck.Elaborate hides IRTy's
+-- constructors from Once.IR): nothing is used through the re-export, yet the hiding must
+-- go; Main is itself a facade with a target in the same run (as Elaborate is), and uses
+-- the data type `G` through the re-export (as Elaborate uses `IRTy`), and hidden names
+-- qualified through the alias (`FF.k`, as Elaborate writes `IR.*`); the alias is
+-- `FF`, not `F`: `open import F as FF` is logged as `open FF`
+module Main where
+
+open import Z
+open import Y
+open import F as FF
+open import X using (G)
+
+g : Set
+g = f
+
+t : U
+t = c * c
+
+h : Set
+h = G
+
+v : G
+v = X.k X.c
+
+== re-check: OK

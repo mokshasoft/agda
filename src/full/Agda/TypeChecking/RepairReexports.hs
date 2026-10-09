@@ -161,7 +161,13 @@ importer :: Set.Set String -> T.Text -> FilePath -> String -> Target -> [Occurre
 importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
   where
     byKey = Map.fromList [ (k, st) | st <- opens, Just k <- [posOf (osModule st)] ]
-    target st = norm (prettyShow (fromMaybe (osModule st) (osShown st)))
+    -- `open import M as A` is logged as `open A`: the module it opens is M
+    target st
+      | isNothing (osShown st), aliasedImport st = norm (osTarget st)
+      | otherwise = norm (prettyShow (fromMaybe (osModule st) (osShown st)))
+    aliasedImport st = case posOf (osModule st) of
+      Just ms -> T.pack " as" `T.isSuffixOf` T.dropWhileEnd isBlank (T.take (ms - 1) txt)
+      Nothing -> False
 
     -- a lineage seen from statement `st`: its own hop dropped, and, for an
     -- application (`open F args`), the application's hop too; the generated
