@@ -209,11 +209,14 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
                | otherwise -> Right (k, item, chainLocal i hs)
       _ -> Left ""
 
+    -- an overloaded name (constructor, field, pattern synonym) means EVERY
+    -- candidate: resolution picks one by type later, so each that crosses the
+    -- target must stay in scope (`c : A` from A and `c : B` through F)
     names = \case
       DefinedName _ a _    -> [a]
-      FieldName as         -> take 1 (toList' as)
-      ConstructorName _ as -> take 1 (toList' as)
-      PatternSynResName as -> take 1 (toList' as)
+      FieldName as         -> toList' as
+      ConstructorName _ as -> toList' as
+      PatternSynResName as -> toList' as
       _                    -> []
     toList' = foldr (:) []
 

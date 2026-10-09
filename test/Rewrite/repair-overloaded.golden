@@ -1,0 +1,25 @@
+== run 1: --repair-reexports=F:3
+repair-reexports: F:3: applied, 1 importer(s) rewritten
+== F.agda (rewritten)
+module F where
+
+open import B
+
+== Main.agda (rewritten)
+-- `c` is overloaded: A's from A, B's through the facade F; both stay in scope
+module Main where
+
+open import A
+open import F
+open import B using (c; B; d)
+
+a : A
+a = c
+
+b : B
+b = c
+
+b' : B
+b' = d
+
+== re-check: OK

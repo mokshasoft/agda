@@ -43,6 +43,7 @@ goldens did not have.
 | R12 | an instance listed in the importer's `using` (used by instance search only) | repair-instance-listed |
 | R13 | `hiding (x)` on the facade after `x` stopped being exported | repair-importer-shapes |
 | R14 | no import of the facade to put a new import after | repair-fallback |
+| R15 | an overloaded constructor/field moved as its FIRST candidate only (`_*_` of `Type` and of `IRTy`: the facade's lost) | repair-overloaded |
 
 ## Further patterns pinned (no bug found, but plausible)
 
