@@ -1,0 +1,38 @@
+== run 1: --repair-reexports=E:3
+repair-reexports: E:3: applied, 1 importer(s) rewritten
+== E.agda (rewritten)
+module E where
+
+open import Lib.Cl
+
+infer : Ctx → N
+infer = lk
+
+== Main.agda (rewritten)
+-- the shape of Once.TypeCheck.Soundness over the facade Once.TypeCheck.Elaborate: the
+-- importer's `using` list is on a continuation line (top level), and a field is used
+-- through the RECORD module `Ctx` reached through the facade (`NamedCtx.size`); the
+-- qualifier keeps the record module (`Cl.Ctx.size`, not `Cl.size`: Cl has no top-level
+-- `size`), and every new import line sits at the statement's indentation; an indented
+-- copy inside a nested module keeps that block's indentation
+module Main where
+
+open import E
+  using (infer)
+open import Lib.Cl using (Ctx; N)
+import Lib.Cl as Cl
+
+s : Ctx → N
+s ctx = Cl.Ctx.size ctx
+
+t : Ctx → N
+t ctx = infer ctx
+
+module Inner where
+    open import E
+      using ()
+
+    u : Ctx → N
+    u ctx = Cl.Ctx.size ctx
+
+== re-check: OK

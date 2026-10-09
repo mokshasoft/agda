@@ -247,13 +247,19 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
             hitsQ = mapMaybe hit rawQual
             full  = prettyShow x
             qual' = take (length full - length (prettyShow (C.unqualify x)) - 1) full
+            -- the qualifier denotes a submodule of the target's module (a
+            -- record module, `NamedCtx` in `NamedCtx.size`): that path stays
+            sub   = case [ drop (length (tMod t) + 1) m | am <- qms, let m = prettyShow (amodName am)
+                                                        , (tMod t ++ ".") `List.isPrefixOf` m ] of
+                      (m : _) -> m ++ "."
+                      []      -> ""
         in case (hitsN, hitsQ) of
-             ((i, hs) : _, _) -> [ requalify x qual' i hs ]
+             ((i, hs) : _, _) -> [ requalify x qual' sub i hs ]
              ([], _ : _) | '.' `elem` qual' -> [ Left ("a qualified module path crossing the target: " ++ full) ]
-             ([], (i, hs) : _) -> [ requalify x qual' i hs ]
+             ([], (i, hs) : _) -> [ requalify x qual' sub i hs ]
              _ -> []
       _ -> []
-    requalify x q i hs = case span' x of
+    requalify x q sub i hs = case span' x of
       Nothing -> Left "a qualified name without a range"
       Just (a, b)
         | not (qtext `T.isPrefixOf` slice) -> Left ("a qualified name written otherwise: " ++ T.unpack slice)
@@ -261,7 +267,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
         | otherwise ->
             let prefix | chainLocal i hs = aliasF ++ "." ++ tMod t ++ "."
                        | tLocal t        = q ++ "." ++ tMod t ++ "."
-                       | otherwise       = aliasX ++ "."
+                       | otherwise       = aliasX ++ "." ++ sub
             in Right (Replace src (a, a + T.length qtext) (T.pack prefix), chainLocal i hs)
         where slice = T.take (b - a) (T.drop a txt)
               -- the whole qualifier as written (`Once.CCC.FrameSemantics`
@@ -300,15 +306,16 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
                  | otherwise = "import " ++ m ++ " as " ++ a
     importAt =
       case [ T.length pre | (pre, _) <- T.breakOnAll (T.pack ("import " ++ fac)) txt ] ++ firstImport of
-        (s0 : _) -> Just (layoutEnd txt (lineBegin txt s0) s0)
+        (s0 : _) -> Just (layoutEnd txt (lineBegin txt s0) s0, indentOf s0)
         []       -> Nothing
     firstImport = [ o | (o, l) <- lineStarts, any (`T.isPrefixOf` l) [T.pack "import ", T.pack "open import "] ]
     lineStarts = scanOffsets 0 (T.lines txt)
     scanOffsets _ [] = []
     scanOffsets o (l : ls) = (o, l) : scanOffsets (o + T.length l + 1) ls
-    indentAt at = let b = lineBegin txt (at - 1) in T.unpack (T.takeWhile isBlank (T.drop b txt))
+    -- the statement's own indentation, not its last (continuation) line's
+    indentOf s = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt s) txt))
     importIntents = case importAt of
-      Just at -> [ Insert src at (T.pack ("\n" ++ indentAt at ++ imp)) | imp <- imports ]
+      Just (at, ind) -> [ Insert src at (T.pack ("\n" ++ ind ++ imp)) | imp <- imports ]
       Nothing -> []
 
     skips = skipped ++ [ w | Left w <- quals ] ++

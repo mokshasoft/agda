@@ -45,6 +45,8 @@ goldens did not have.
 | R14 | no import of the facade to put a new import after | repair-fallback |
 | R15 | an overloaded constructor/field moved as its FIRST candidate only (`_*_` of `Type` and of `IRTy`: the facade's lost) | repair-overloaded |
 | R16 | an importer `open import F as A …` ignored entirely (logged as `open A`: its uses not moved, its `hiding` of re-exported names kept) | repair-hiding-alias |
+| R17 | an `import X as A` added after an importer whose directive wraps: indented as the continuation line (a parse error at top level) | repair-record-qualifier |
+| R18 | a qualifier naming a RECORD module reached through the facade (`NamedCtx.size`) replaced by the module alias alone (`Classify.size`: not in scope) | repair-record-qualifier |
 
 ## Further patterns pinned (no bug found, but plausible)
 
