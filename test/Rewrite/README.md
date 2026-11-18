@@ -54,7 +54,7 @@ goldens did not have.
 
 ## Further patterns pinned (no bug found, but plausible)
 
-* renamings, in the facade and in the importer: refused with a reason (repair-renames)
+* renamings in the facade: each importer writes the entry itself (R20); in the importer: refused with a reason (repair-renames)
 * an applied facade reached through a chain: refused (repair-appliedchain)
 * importer statement inside a nested module: indentation (repair-nested)
 * a wholesale importer relying on a re-exported instance (repair-instance)

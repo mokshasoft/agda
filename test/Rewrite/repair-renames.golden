@@ -1,5 +1,23 @@
 == run 1: --repair-reexports=F:3,G:3
-repair-reexports: F:3: NOT applied: it renames
+repair-reexports: F:3: applied, 1 importer(s) rewritten
 repair-reexports: G:3: NOT applied:
   Main: renamed: y′
+== F.agda (rewritten)
+module F where
+
+open import X renaming (x to x′)
+
+== Main.agda (rewritten)
+module Main where
+
+open import F using ()
+open import X using () renaming (x to x′)
+open import G using () renaming (y to y′)
+
+u : Set₁
+u = x′
+
+v : Set₁
+v = y′
+
 == re-check: OK
