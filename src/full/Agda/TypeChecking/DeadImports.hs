@@ -45,6 +45,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (isJust, mapMaybe)
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -169,14 +170,14 @@ usedPairs = Set.fromList . concatMap pairs
       PatternSynResName as -> NE.toList as
       _                    -> []
 
--- | The first components of the qualifiers the module writes (@M@ in @M.x@):
---   a module still used qualified must stay imported.
-qualifiersUsed :: [Occurrence] -> Set.Set String
-qualifiersUsed = Set.fromList . mapMaybe q
+-- | The qualifiers the module writes (@M@ in @M.x@), each with the position
+--   of its first use: a module still used qualified must stay imported.
+qualifiersUsed :: [Occurrence] -> Map.Map String Int
+qualifiersUsed = Map.fromListWith min . mapMaybe q
   where
     q (Occurrence x _) = case x of
-      C.Qual{} -> Just (qualifierText x)
-      _        -> Nothing
+      C.Qual{} | Just p <- posOf x -> Just (qualifierText x, p)
+      _                            -> Nothing
 
 outermost :: WhyInScope -> Maybe C.QName
 outermost = \case
@@ -242,11 +243,14 @@ applyEdits src edits = do
   where
     apply (a, b, new) t = T.take a t <> new <> T.drop b t
 
-planEdits :: FilePath -> Set.Set String -> [OpenStmt] -> [(OpenStmt, [(String, Range, Bool, [QName])])] -> IO (FilePath, [Edit])
+planEdits :: FilePath -> Map.Map String Int -> [OpenStmt] -> [(OpenStmt, [(String, Range, Bool, [QName])])] -> IO (FilePath, [Edit])
 planEdits src quals opens deadByStmt = do
   txt <- readSource src
-  -- a module some statement still opens is in scope: a dead statement on it
-  -- need not become @import M@ to keep @M.x@ working
+  -- a module some statement still opens is in scope from that statement on:
+  -- a dead statement on it need not become @import M@ to keep @M.x@ working
+  -- when a surviving statement at the top level (it starts its line in
+  -- column 0, so its scope is the rest of the file) comes before every
+  -- qualified use (D15: a later statement does not scope an earlier use)
   let key = posOf . osModule
       deadCount st = maybe 0 length (lookup (key st) [ (key st', ds) | (st', ds) <- deadByStmt ])
       wholeDead st = any (any isWholeStatement) (lookup (key st) [ (key st', ds) | (st', ds) <- deadByStmt ])
@@ -254,8 +258,14 @@ planEdits src quals opens deadByStmt = do
         | osPublic st    = True
         | osWholesale st = not (wholeDead st)
         | otherwise      = length (osItems st) > deadCount st
-      keptMods = Set.fromList [ prettyShow (osModule st) | st <- opens, survives st ]
-      quals' = quals `Set.difference` keptMods
+      topLevel st = case posOf (osModule st) of
+        Just p  -> let lb = maybe 0 (\ k -> (p - 1) - k) (T.findIndex (== '\n') (T.reverse (T.take (p - 1) txt)))
+                   in T.pack "open" `T.isPrefixOf` T.drop lb txt
+        Nothing -> False
+      keptMods = Map.fromListWith min
+        [ (prettyShow (osModule st), p) | st <- opens, survives st, topLevel st, Just p <- [posOf (osModule st)] ]
+      covered m u = maybe False (< u) (Map.lookup m keptMods)
+      quals' = Map.keysSet (Map.filterWithKey (\ m u -> not (covered m u)) quals)
   let edits = concatMap (stmtEdits txt quals') deadByStmt
   -- forced: the edits must not hold on to the scope
   sum [ a + b + T.length t | (a, b, t) <- edits ] `seq` return (src, edits)
