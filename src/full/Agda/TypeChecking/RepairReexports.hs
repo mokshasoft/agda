@@ -199,7 +199,14 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
         [ (posOf x, through (anameLineage a) (T.pack (prettyShow (C.unqualify x)))) | a <- names r ]
       (C.QName _, ModuleName am) ->
         [ (posOf x, through (amodLineage am) (T.pack ("module " ++ prettyShow x))) ]
+      -- the head of a qualifier (`Inner` in `Inner.twice`) that a statement
+      -- brought through the target is a module item used: it moves (R20)
+      (C.QName _, QualifierHead am) ->
+        [ (posOf x, through (amodLineage am) (T.pack ("module " ++ prettyShow x))) ]
       _ -> []
+    -- where those heads are written: a qualified use starting there keeps
+    -- its qualifier, which still names the moved item
+    movedHeads = Set.fromList [ p | o@(Occurrence _ QualifierHead{}) <- occs, (Just p, Right _) <- use o ]
     -- the occurrences this target rewrites the meaning of: two targets
     -- touching one occurrence (a chain of re-exports) are not written in
     -- the same run
@@ -238,6 +245,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     quals = map snd qualsAt
     qualsAt = [ (posOf x, q') | o@(Occurrence x _) <- occs, q' <- qual o ]
     qual (Occurrence x what) = case (x, what) of
+      (C.Qual _ _, Resolved _ _) | Just p <- posOf x, p `Set.member` movedHeads -> []
       (C.Qual _ _, Resolved r qms) ->
         let rawName = [ lineageTexts (anameLineage a) | a <- names r ]
             rawQual = [ lineageTexts (amodLineage am) | am <- qms ]

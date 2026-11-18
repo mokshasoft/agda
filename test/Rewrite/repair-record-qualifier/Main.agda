@@ -1,9 +1,9 @@
 -- the shape of Once.TypeCheck.Soundness over the facade Once.TypeCheck.Elaborate: the
 -- importer's `using` list is on a continuation line (top level), and a field is used
 -- through the RECORD module `Ctx` reached through the facade (`NamedCtx.size`); the
--- qualifier keeps the record module (`Cl.Ctx.size`, not `Cl.size`: Cl has no top-level
--- `size`), and every new import line sits at the statement's indentation; an indented
--- copy inside a nested module keeps that block's indentation
+-- record module is a qualifier head that came through the target, so it moves as an
+-- item (`module Ctx`) and `Ctx.size` keeps its text (R19; never `Cl.size`: Cl has no
+-- top-level `size`); every new import line sits at the statement's indentation
 module Main where
 
 open import E

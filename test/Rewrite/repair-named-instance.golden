@@ -1,0 +1,56 @@
+== run 1: --repair-reexports=F:6,G:6
+repair-reexports: F:6: applied, 1 importer(s) rewritten
+repair-reexports: G:6: applied, 1 importer(s) rewritten
+== F.agda (rewritten)
+module F where
+
+open import Agda.Builtin.Nat using (Nat)
+import P
+module PN = P Nat
+open PN
+
+one : Box
+one = box 1
+
+== G.agda (rewritten)
+-- an applied facade: G's importers get their own copy of G's instance
+module G (A : Set) where
+
+import P
+module PA = P A
+open PA
+
+== Main.agda (rewritten)
+-- the facades' instances are named (`module PN = P Nat`); their `open … public`
+-- go and every importer opens the named instance itself (plan 0.152 A(2b))
+module Main where
+
+open import Agda.Builtin.Nat using (Nat)
+open import F using (one)
+open import F using (module PN)
+open PN using (unbox; Box; module Inner)
+import F as Q
+
+u : Nat
+u = unbox one
+
+w : F.PN.Box
+w = Q.PN.box 3
+
+t : Box
+t = Inner.twice one
+
+== Main2.agda (rewritten)
+module Main2 where
+
+open import Agda.Builtin.Nat using (Nat)
+open import G Nat
+open PA using (unbox; box; Box)
+
+v : Nat
+v = unbox (box 2)
+
+x : Box
+x = PA.Inner.twice (box 4)
+
+== re-check: OK
