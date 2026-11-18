@@ -50,6 +50,7 @@ goldens did not have.
 | R17 | an `import X as A` added after an importer whose directive wraps: indented as the continuation line (a parse error at top level) | repair-record-qualifier |
 | R18 | a qualifier naming a RECORD module reached through the facade (`NamedCtx.size`) replaced by the module alias alone (`Classify.size`: not in scope) | repair-record-qualifier |
 | R19 | a module item used as the head of a qualifier (`Inner.twice`, `Ctx.size`) through the target was requalified (`Q.PN.twice`, dropping `Inner`) and the item never moved: the head is a module item used, it moves to the source's `using`, and the qualified use keeps its text (found on Once, plan 0.152 A(2b), 2026-11-18) | repair-named-instance, repair-record-qualifier |
+| R20 | a re-export that renames (`renaming (map to mmap) public`) was refused ("it renames"): each importer now writes the renaming entry itself (a new `open import X using (…) renaming (…)`, or `using () renaming (…)` beside its own statement on X); a renamed name used qualified is refused (found on Once, plan 0.152 A(2), IRObsCorrect.Prelude, 2026-11-18) | repair-renaming |
 
 ## Further patterns pinned (no bug found, but plausible)
 

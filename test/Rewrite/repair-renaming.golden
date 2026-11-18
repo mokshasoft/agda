@@ -1,0 +1,29 @@
+== run 1: --repair-reexports=F:3
+repair-reexports: F:3: applied, 2 importer(s) rewritten
+== F.agda (rewritten)
+module F where
+
+open import X using (T; t) renaming (map to tmap)
+
+== Main.agda (rewritten)
+-- a re-export that renames (`map to tmap`): each importer writes the renaming
+-- itself, in a new statement or next to its own statement on X (R20)
+module Main where
+
+open import F using ()
+open import X using (keep; T)
+open import X using () renaming (map to tmap)
+
+u : T → T
+u x = keep (tmap x)
+
+== Main2.agda (rewritten)
+module Main2 where
+
+open import F
+open import X using (T; t) renaming (map to tmap)
+
+v : T
+v = tmap t
+
+== re-check: OK
