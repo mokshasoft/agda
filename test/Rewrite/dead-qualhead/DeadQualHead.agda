@@ -1,0 +1,28 @@
+-- --remove-dead-imports: a module item used only through a NESTED qualifier
+-- (`ShapeC.CaseShape.shape`, `module RS = ResuspC.Resusp n`) is used: the
+-- full qualifier's lineage starts inside the item's module, so the head is
+-- what names the statement (D14).
+module DeadQualHead (n : Set) where
+
+open import DeadQualA n using (module ShapeC; unused)   -- `unused` dead
+open import DeadQualA n using (T)
+open import DeadQualA n using (module T)
+open import DeadQualA n using (module ResuspIdC)
+open import DeadQualB n
+
+-- a submodule of an item, written as a two-level qualifier
+s : Set₁
+s = ShapeC.CaseShape.shape n
+
+-- a record field through the record module item
+f : ∀ {X} → T X → X
+f t = T.force t
+
+-- a two-level qualifier through a module item
+g : Set → Set
+g x = ResuspIdC.RId.resusp x
+
+-- a module application naming a submodule of a wholesale import
+module RS = ResuspC.Resusp n
+h : Set
+h = RS.r

@@ -156,6 +156,10 @@ record projectDir m (Occurrence x what) = JObj $
       [ ("kind", JStr "module")
       , ("resolved", JStr (prettyShow (amodName am)))
       , ("lineage", lineage (amodLineage am)) ]
+    QualifierHead am ->
+      [ ("kind", JStr "qualifier-head")
+      , ("resolved", JStr (prettyShow (amodName am)))
+      , ("lineage", lineage (amodLineage am)) ]
     Binder b y ->
       [ ("kind", JStr "binder")
       , ("resolved", JStr (prettyShow y))

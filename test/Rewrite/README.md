@@ -29,6 +29,7 @@ goldens did not have.
 | D11 | `public` statements and duplicates | dead-shapes |
 | D12 | a multi-line `using` list collapsed onto one line | dead-layout |
 | D13 | a dead statement inside a `where` block; a wholesale open used only for an instance (kept) | dead-layout |
+| D14 | a module item used only through a nested qualifier (`ShapeC.CaseShape.shape`, `module RS = ResuspC.Resusp n`) removed: the full qualifier's lineage starts inside the item's module (found on Once, plan 0.152, 2026-11-18) | dead-qualhead |
 | R1 | an applied facade (`open import F args`): lineage hop `.#F-1234` not recognised | repair-basic |
 | R2 | qualified uses rewritten fully qualified (`Once.Parser.Entry`) | repair-alias, repair-basic |
 | R3 | a qualified OPERATOR use refused / garbled | repair-basic |

@@ -14,7 +14,9 @@
 --     ('Agda.Syntax.Scope.Monad.openModule'), with their items;
 --   * every resolution of the module contributes (statement, name) pairs —
 --     its own lineage's outermost hop, and its qualifier's (@R.f@ uses the
---     item @R@ that brought module @R@ in);
+--     item @R@ that brought module @R@ in), and its head's (@R.N.f@ and
+--     @module X = R.N@ use the item @R@ even when @N@ is a submodule of
+--     @R@, whose lineage starts inside @R@);
 --   * an item no pair names is dead.
 --
 --   Kept although nothing names them: @public@ re-exports (their users are
@@ -157,6 +159,8 @@ usedPairs = Set.fromList . concatMap pairs
       ModuleName am ->
         [ p | Just h <- [outermost (amodLineage am)]
             , p <- [ (posOf h, firstName x), (posOf h, prettyShow x) ] ]
+      QualifierHead am ->
+        [ (posOf h, prettyShow x) | Just h <- [outermost (amodLineage am)] ]
       Binder{} -> []
     names = \case
       DefinedName _ a _    -> [a]

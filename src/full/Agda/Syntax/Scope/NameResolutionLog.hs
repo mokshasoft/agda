@@ -69,6 +69,11 @@ data What
       --   occurrence like @C.x@ is not explained by @x@'s lineage alone.
   | ModuleName AbstractModule
       -- ^ A module name: @open M@, @import M@, @module X = M@.
+  | QualifierHead AbstractModule
+      -- ^ The first component of a qualified name (@M@ in @M.N.x@ or in
+      --   @module X = M.N@), as a module.  The full qualifier's lineage
+      --   starts inside @M@ when @N@ is a submodule of @M@, so only this
+      --   lookup names the @open@ that brought @M@ into scope.
   | Binder BindingSource A.Name
       -- ^ A variable bound here.  Without these, a constructor that turns
       --   into a pattern variable leaves no record where it was.
@@ -80,6 +85,7 @@ whatTag = \case
   ModuleName{} -> 0
   Resolved{}   -> 1
   Binder{}     -> 2
+  QualifierHead{} -> 3
 
 -- | Key within a file: start, end, kind of record.
 type Key = (Word, Word, Int)

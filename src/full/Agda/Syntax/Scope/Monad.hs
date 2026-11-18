@@ -479,10 +479,21 @@ logResolution x r = whenM (liftIO Log.logEnabled) $ do
     Nothing -> pure []
     Just q  -> scopeLookup q <$> getScope
   liftIO $ Log.logOccurrence $ Log.Occurrence x $ Log.Resolved r quals
+  logQualifierHead x
   where
     qualifierOf :: C.QName -> Maybe C.QName
     qualifierOf (C.QName _)  = Nothing
     qualifierOf (C.Qual m q) = Just $ maybe (C.QName m) (C.Qual m) (qualifierOf q)
+
+-- | Log the head of a qualified name as a module (for @--dead-imports@:
+--   @M.N.x@ uses the @open@ that brought @M@, also when @N@ is a submodule
+--   of @M@ and the qualifier's own lineage therefore starts inside @M@).
+logQualifierHead :: C.QName -> ScopeM ()
+logQualifierHead (C.QName _)  = pure ()
+logQualifierHead (C.Qual m _) = whenM (liftIO Log.logEnabled) $ do
+  let h = C.QName m
+  ms <- scopeLookup h <$> getScope
+  forM_ ms $ \ am -> liftIO $ Log.logOccurrence $ Log.Occurrence h $ Log.QualifierHead am
 
 -- | A directive item as it is bound in scope, with its range
 --   (for @--dead-imports@).
@@ -511,6 +522,7 @@ resolveModule x = do
       let am = AbsModule (m `withRangeOf` x) why
       whenM (liftIO Log.logEnabled) $
         liftIO $ Log.logOccurrence $ Log.Occurrence x $ Log.ModuleName am
+      logQualifierHead x
       return am
     ms                    -> typeError $ AmbiguousModule x (fmap amodName ms)
 
