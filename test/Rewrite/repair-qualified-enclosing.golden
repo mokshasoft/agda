@@ -1,0 +1,22 @@
+== run 1: --repair-reexports=F:6
+repair-reexports: F:6: applied, 1 importer(s) rewritten
+== F.agda (rewritten)
+module F where
+
+import X
+
+module W (A : Set) where
+  open X using (t)
+
+== I.agda (rewritten)
+module I where
+
+open import X using (T)
+import F as Fx
+
+module VC = Fx.W T
+
+u : T
+u = X.t
+
+== re-check: OK

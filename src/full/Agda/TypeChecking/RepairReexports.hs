@@ -247,6 +247,11 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
     -- FlatMachine {FS}`, reached by `open FlatMachine {FS}`; R28,
     -- test/Rewrite/repair-enclosing)
     parentOK h = unalias h == fac || Just h == lastEncl
+                 -- written qualified (`Compile.WithCPU`, `module VC = Compile.WithCPU …`):
+                 -- the facade's enclosing module, named through the facade (R33)
+                 || (Just (lastOf h) == lastEncl && not (null (initOf h)) && unalias (initOf h) == fac)
+    lastOf h = last (splitOnDot h)
+    initOf h = List.intercalate "." (init' (splitOnDot h))
     enclPath = tEncl t
     lastEncl = if null enclPath then Nothing else Just (last enclPath)
     init' xs = if null xs then [] else init xs
