@@ -209,8 +209,22 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
     -- own hop is the first (k >= 2), or from a qualifier (k >= 1)
     crossing :: Maybe String -> [String] -> Maybe Int
     crossing first hs = List.find ok [ i | (i, h) <- zip [0 ..] hs, h == tMod t ]
-      where ok i | i == 0    = first == Just fac
-                 | otherwise = unalias (hs !! (i - 1)) == fac
+      where ok i | i == 0    = maybe False parentOK first
+                 | otherwise = parentOK (hs !! (i - 1))
+    -- the hop before the target: the facade, or the facade's submodule the
+    -- target statement sits in (`open FlatState public` inside `module
+    -- FlatMachine {FS}`, reached by `open FlatMachine {FS}`; R28,
+    -- test/Rewrite/repair-enclosing)
+    parentOK h = unalias h == fac || Just h == lastEncl
+    enclPath = init' (splitOnDot (tPath t))
+    lastEncl = if null enclPath then Nothing else Just (last enclPath)
+    init' xs = if null xs then [] else init xs
+    splitOnDot x = case break (== '.') x of
+      (c, [])       -> [c]
+      (c, _ : rest) -> c : splitOnDot rest
+    -- the module as written after a statement or qualifier that denotes the
+    -- enclosing submodule: its last component; else its path in the facade
+    pathFrom m = if lastEncl == Just m then last (splitOnDot (tPath t)) else tPath t
     -- a hop written as an alias of the importer's (`import F as Fx` then
     -- `module EE = Fx args`) is that module (R24, test/Rewrite/repair-alias-instance)
     -- … or in the module that wrote the hop: some module of the run binds
@@ -325,7 +339,8 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
       (C.Qual _ _, Resolved r qms) ->
         let rawName = [ (hopTexts l, appliedOps l) | a <- names r, let l = anameLineage a ]
             rawQual = [ (hopTexts l, appliedOps l) | am <- qms, let l = amodLineage am ]
-            denotesF = any (\ am -> prettyShow (amodName am) == fac) qms
+            denotesE = not (null enclPath) && any (\ am -> prettyShow (amodName am) == fac ++ "." ++ List.intercalate "." enclPath) qms
+            denotesF = denotesE || any (\ am -> prettyShow (amodName am) == fac) qms
             hit (hs, ops) = (\ i -> (i, hs, ops)) <$> crossing (if denotesF then Just fac else Nothing) (map norm hs)
             hitsN = mapMaybe hit rawName
             hitsQ = mapMaybe hit rawQual
@@ -340,12 +355,12 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
         in case (hitsN, hitsQ) of
              (_ : _, _) | Just _ <- lookup (prettyShow (C.unqualify x)) (tRenames t) ->
                [ Left ("a renamed name used qualified: " ++ full) ]
-             ((i, hs, ops) : _, _) -> [ requalify x qual' sub i hs ops ]
+             ((i, hs, ops) : _, _) -> [ requalify x qual' sub i hs ops denotesE ]
              ([], _ : _) | '.' `elem` qual' -> [ Left ("a qualified module path crossing the target: " ++ full) ]
-             ([], (i, hs, ops) : _) -> [ requalify x qual' sub i hs ops ]
+             ([], (i, hs, ops) : _) -> [ requalify x qual' sub i hs ops denotesE ]
              _ -> []
       _ -> []
-    requalify x q sub i hs ops = case span' x of
+    requalify x q sub i hs ops denotesE = case span' x of
       Nothing -> Left "a qualified name without a range"
       Just (a, b)
         | not (qtext `T.isPrefixOf` slice) -> Left ("a qualified name written otherwise: " ++ T.unpack slice)
@@ -355,7 +370,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
         | chainLocal i hs && (applied hs || or (take i ops)) -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
             let prefix | chainLocal i hs = aliasF ++ "." ++ tPath t ++ "."
-                       | tLocal t        = q ++ "." ++ tPath t ++ "."
+                       | tLocal t        = q ++ "." ++ (if denotesE then last (splitOnDot (tPath t)) else tPath t) ++ "."
                        | otherwise       = aliasX ++ "." ++ sub
             in Right (Replace src (a, a + T.length qtext) (T.pack prefix), chainLocal i hs)
         where slice = T.take (b - a) (T.drop a txt)
@@ -430,7 +445,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
           spans  = [ sp | (_, r, False, _) <- osItems st, Just sp <- [rspan r] ]
           drops  = [ sp | (_, r, _, _) <- crossingItems st, Just sp <- [rspan r] ]
           -- the facade's own module the path starts with (R25)
-          modItem = T.pack ("module " ++ takeWhile (/= '.') (tPath t))
+          modItem = T.pack ("module " ++ takeWhile (/= '.') (pathFrom (target st)))
           hasMod = any (\ (n, _, _, _) -> T.pack n == modItem) (osItems st)
           adds   = [ modItem | tLocal t, not (null direct), not (osWholesale st), not hasMod ]
           group  = [ Group src spans drops adds | not (null spans), not (null drops && null adds) ]
@@ -439,7 +454,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
           start  = stmtStart txt ms
           end    = stmtEnd txt st ms me
           ind    = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt start) txt))
-          opener | tLocal t  = "open " ++ tPath t
+          opener | tLocal t  = "open " ++ pathFrom (target st)
                  | otherwise = "open import " ++ tMod t
           line o its = Insert src end (T.pack ("\n" ++ ind ++ o) <> directive its)
           -- `open import X using (…)` is gathered over all statements (mergeX)
