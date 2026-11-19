@@ -65,6 +65,10 @@ data Target = Target
       -- ^ How an importer names the re-exported module: for a submodule, its
       --   path inside the facade (`FlatSimulation.C` when `C` is in scope there
       --   only through `open FlatSimulation`), else 'tMod' (R25).
+  , tEncl   :: [String]
+      -- ^ The named modules the statement sits in, inside the facade,
+      --   outermost first (`[FlatMachine]` for `open FlatState public` in
+      --   `module FlatMachine {FS} where`); `_` sections left out (R28, R30).
   , tPublic :: Edit     -- ^ Removing the @public@.
   , tNames  :: [String] -- ^ What the statement brings in (as bound).
   , tRenames :: [(String, T.Text)]
@@ -145,14 +149,14 @@ facade txt src opens key@(me, line) =
     [] -> Left "no public open statement starts at that line"
     (st : _)
       | Just _ <- osShown st -> Left "it re-exports a module application"
-      | not (importStmtIn txt st) && not ((me ++ ".") `List.isPrefixOf` osTarget st) ->
+      | not (importStmtIn txt st) && not (topOpen st) && not ((me ++ ".") `List.isPrefixOf` osTarget st) ->
           Left ("it opens " ++ osTarget st ++ ", which is not a submodule of the facade")
-      | not (importStmtIn txt st), ".#" `List.isInfixOf` drop (length me + 1) (osTarget st) ->
+      | not (importStmtIn txt st), not (topOpen st), ".#" `List.isInfixOf` drop (length me + 1) (osTarget st) ->
           Left ("it opens " ++ osTarget st ++ ", a submodule an importer cannot name")
       | otherwise -> case (posOf (osModule st), rEnd' (getRange (osModule st))) of
           (Just ms, Just me') ->
             let me      = me'
-                path | importStmtIn txt st = prettyShow (osModule st)
+                path | importStmtIn txt st || topOpen st = prettyShow (osModule st)
                      -- an anonymous section's `_` is no part of the path (R23)
                      | otherwise           = List.intercalate "." (filter (/= "_") (splitDots (drop (length (fst key) + 1) (osTarget st))))
                 splitDots x = case break (== '.') x of
@@ -177,9 +181,33 @@ facade txt src opens key@(me, line) =
                                  | (n, r, True, _) <- osItems st
                                  , Just a <- [subtract 1 . fromIntegral . posPos <$> rStart' r]
                                  , Just b <- [subtract 1 . fromIntegral . posPos <$> rEnd' r] ]
-                   in Right $ Target src (prettyShow (osModule st)) (not isImp) path pubEdit (map fst (osHops st)) renames
+                   in Right $ Target src (prettyShow (osModule st)) (not (isImp || topOpen st)) path
+                                     (enclosing txt (stmtStart txt mstart)) pubEdit (map fst (osHops st)) renames
                  _ -> Left "no `public` found in the statement"
           _ -> Left "the statement has no range"
+
+  where
+    -- `open M …` of a top-level module the facade imports re-exports it like
+    -- `open import M …` (R30, test/Rewrite/repair-open-toplevel)
+    topOpen st = isNothing (osShown st) && osTarget st == prettyShow (osModule st)
+                 && not ((fst key ++ ".") `List.isPrefixOf` osTarget st)
+
+-- | The named modules a position sits in, outermost first, read off the
+--   layout: each less-indented `module N … where` above it (`_` left out).
+enclosing :: T.Text -> Int -> [String]
+enclosing txt off =
+  let ls   = T.lines (T.take off txt)
+      ind l = T.length (T.takeWhile isBlank l)
+      k0   = case reverse ls of { (l : _) -> ind l; [] -> 0 }
+      go _ [] acc = acc
+      go k (l : rest) acc
+        | k == 0 = acc
+        | T.null (T.strip l) || T.pack "--" `T.isPrefixOf` T.strip l = go k rest acc
+        | ind l < k = case T.words l of
+            (w : n : ws) | w == T.pack "module", take 1 ws /= [T.pack "="] -> go (ind l) rest (T.unpack n : acc)
+            _ -> go (ind l) rest acc
+        | otherwise = go k rest acc
+  in filter (/= "_") (go k0 (drop 1 (reverse ls)) [])
 
 -- | An `open import` (not an open of a module in scope).
 importStmtIn :: T.Text -> OpenStmt -> Bool
@@ -219,7 +247,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
     -- FlatMachine {FS}`, reached by `open FlatMachine {FS}`; R28,
     -- test/Rewrite/repair-enclosing)
     parentOK h = unalias h == fac || Just h == lastEncl
-    enclPath = init' (splitOnDot (tPath t))
+    enclPath = tEncl t
     lastEncl = if null enclPath then Nothing else Just (last enclPath)
     init' xs = if null xs then [] else init xs
     splitOnDot x = case break (== '.') x of
@@ -227,7 +255,8 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
       (c, _ : rest) -> c : splitOnDot rest
     -- the module as written after a statement or qualifier that denotes the
     -- enclosing submodule: its last component; else its path in the facade
-    pathFrom m = if lastEncl == Just m then last (splitOnDot (tPath t)) else tPath t
+    pathFrom m = if lastEncl == Just m then relPath else tPath t
+    relPath = fromMaybe (tPath t) (List.stripPrefix (List.intercalate "." enclPath ++ ".") (tPath t))
     -- a hop written as an alias of the importer's (`import F as Fx` then
     -- `module EE = Fx args`) is that module (R24, test/Rewrite/repair-alias-instance)
     -- … or in the module that wrote the hop: some module of the run binds
@@ -373,7 +402,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
         | chainLocal i hs && (applied hs || or (take i ops)) -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
             let prefix | chainLocal i hs = aliasF ++ "." ++ tPath t ++ "."
-                       | tLocal t        = q ++ "." ++ (if denotesE then last (splitOnDot (tPath t)) else tPath t) ++ "."
+                       | tLocal t        = q ++ "." ++ (if denotesE then relPath else tPath t) ++ "."
                        | otherwise       = aliasX ++ "." ++ sub
             in Right (Replace src (a, a + T.length qtext) (T.pack prefix), chainLocal i hs)
         where slice = T.take (b - a) (T.drop a txt)
@@ -530,7 +559,7 @@ data Via = ViaDirect | ViaChain | ViaInst String
 forceTarget :: Either String Target -> Int
 forceTarget = \case
   Left why -> length why
-  Right (Target f m l pth (a, b, x) ns rs) -> length f + length m + fromEnum l + length pth + a + b + T.length x + sum (map length ns)
+  Right (Target f m l pth enc (a, b, x) ns rs) -> length f + length m + fromEnum l + length pth + sum (map length enc) + a + b + T.length x + sum (map length ns)
                                          + sum [ length n + T.length e | (n, e) <- rs ]
 
 forceIntents :: [Intent] -> Int

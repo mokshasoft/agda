@@ -1,0 +1,25 @@
+== run 1: --repair-reexports=F:4,F:7
+repair-reexports: F:4: applied, 1 importer(s) rewritten
+repair-reexports: F:7: NOT applied: shares occurrences with a target applied in this run (a chain); run again
+== run 2: --repair-reexports=F:7
+repair-reexports: F:7: applied, 1 importer(s) rewritten
+== F.agda (rewritten)
+module F where
+
+import X
+open X using (T)
+
+module In where
+  open X using (t)
+
+== I.agda (rewritten)
+module I where
+
+open import F
+open import X using (T; t)
+open In
+
+u : T
+u = t
+
+== re-check: OK
