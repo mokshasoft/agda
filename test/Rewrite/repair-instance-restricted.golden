@@ -1,0 +1,4 @@
+== run 1: --repair-reexports=F:5
+repair-reexports: F:5: NOT applied:
+  I: the instance FI is applied with a directive: add the submodule to it by hand
+== re-check: OK

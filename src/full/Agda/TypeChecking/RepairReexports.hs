@@ -222,6 +222,15 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
       Opened q w  | anon q -> hopTexts w
                   | otherwise -> prettyShow q : hopTexts w
       Applied q w -> prettyShow q : hopTexts w
+    -- a named instance applied with a directive (`module N = F args using (…)`)
+    -- copies only what it lists: its copy of the submodule may not exist, and
+    -- the application's directive is not logged, so it is not rewritten (R26)
+    restricted n = case T.breakOn (T.pack ("module " ++ n ++ " = ")) txt of
+      (pre, rest) | not (T.null rest), T.null pre || T.last pre == '\n' ->
+        let body = T.unlines (take 1 ls ++ takeWhile (\ l -> T.null l || isBlank (T.head l)) (drop 1 ls))
+            ls   = T.lines rest
+        in any (`elem` map T.pack ["using", "hiding", "renaming"]) (T.words body)
+      _ -> False
     -- which hops of a lineage are module applications (`module N = F args`)
     appliedOps = \case
       Defined     -> []
@@ -267,6 +276,8 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
              Nothing -> Left ""
              Just i
                | any (\ (n, _, ren, _) -> ren && T.pack n == item) (osItems st) -> Left ("renamed: " ++ T.unpack item)
+               | inst i, restricted (prettyShow (osModule st)) ->
+                   Left ("the instance " ++ prettyShow (osModule st) ++ " is applied with a directive: add the submodule to it by hand")
                | inst i -> Right (k, item, ViaInst (prettyShow (osModule st)))
                | chainLocal i hs && (applied (drop 1 hs) || or (take (off + i - 1) (drop 1 ops))) ->
                    Left "a submodule re-export reached through an applied chain"
@@ -327,6 +338,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
       Just (a, b)
         | not (qtext `T.isPrefixOf` slice) -> Left ("a qualified name written otherwise: " ++ T.unpack slice)
         -- `FI.x` with `module FI = F T`: the qualifier names the copy (R22)
+        | inst, restricted q -> Left ("the instance " ++ q ++ " is applied with a directive: add the submodule to it by hand")
         | inst -> Right (Replace src (a, a + T.length qtext) (T.pack (q ++ "." ++ tPath t ++ ".")), False)
         | chainLocal i hs && (applied hs || or (take i ops)) -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
