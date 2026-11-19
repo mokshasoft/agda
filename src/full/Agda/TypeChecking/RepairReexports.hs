@@ -179,7 +179,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     -- application (`open F args`), the application's hop too; the generated
     -- name of an applied module (`.#F-1234`) read as `F`
     afterStmt st hs =
-      let hs1 = map norm (drop 1 hs)
+      let hs1 = filter (/= "_") (map norm (drop 1 hs))
       in if take 1 hs1 == [target st] && isJust (osShown st) then drop 1 hs1 else hs1
     applied = any (\ h -> take 2 h == ".#")
 
@@ -196,10 +196,20 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     -- on the way (its submodule is then a copy the importer cannot name).
     chainLocal i hs = tLocal t && i > 0
 
+    -- an anonymous section (`module _ (v : A) where`) is opened into the
+    -- module around it: its hop `_` is that module's own (R23,
+    -- test/Rewrite/repair-section-instance), so it is not a hop
+    anon q = prettyShow q == "_"
+    hopTexts = \case
+      Defined     -> []
+      Opened q w  | anon q -> hopTexts w
+                  | otherwise -> prettyShow q : hopTexts w
+      Applied q w -> prettyShow q : hopTexts w
     -- which hops of a lineage are module applications (`module N = F args`)
     appliedOps = \case
       Defined     -> []
-      Opened _ w  -> False : appliedOps w
+      Opened q w  | anon q -> appliedOps w
+                  | otherwise -> False : appliedOps w
       Applied _ w -> True  : appliedOps w
     -- a chain whose facade hop is an application NAMED by the hop before it
     -- (`module FI = F T` then `open FI`, or `FI.x`): the importer names the
@@ -229,11 +239,13 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     handled = [ p | (Just p, Right _) <- usesAt ] ++ [ p | (Just p, Right _) <- qualsAt ]
     through w item = case w of
       Opened q _ | Just k <- posOf q, Just st <- Map.lookup k byKey ->
-        let hs  = lineageTexts w
+        let hs  = hopTexts w
             ops = appliedOps w
             off = length hs - length (afterStmt st hs)
-            -- the statement opens a named instance of the facade
+            -- the statement opens a NAMED instance of the facade (an
+            -- anonymous one, `.#F-…`, is a copy nobody can name)
             inst i = chainLocal i hs && i == 1 && isNothing (osShown st) && off == 1 && take 1 (drop 1 ops) == [True]
+                     && not (applied (drop 1 hs))
         in case crossing (Just (target st)) (afterStmt st hs) of
              Nothing -> Left ""
              Just i
@@ -271,8 +283,8 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     qual (Occurrence x what) = case (x, what) of
       (C.Qual _ _, Resolved _ _) | Just p <- posOf x, p `Set.member` movedHeads -> []
       (C.Qual _ _, Resolved r qms) ->
-        let rawName = [ (lineageTexts l, appliedOps l) | a <- names r, let l = anameLineage a ]
-            rawQual = [ (lineageTexts l, appliedOps l) | am <- qms, let l = amodLineage am ]
+        let rawName = [ (hopTexts l, appliedOps l) | a <- names r, let l = anameLineage a ]
+            rawQual = [ (hopTexts l, appliedOps l) | am <- qms, let l = amodLineage am ]
             denotesF = any (\ am -> prettyShow (amodName am) == fac) qms
             hit (hs, ops) = (\ i -> (i, hs, ops)) <$> crossing (if denotesF then Just fac else Nothing) (map norm hs)
             hitsN = mapMaybe hit rawName
