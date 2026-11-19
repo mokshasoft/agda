@@ -497,7 +497,11 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
           ind    = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt start) txt))
           opener | tLocal t  = "open " ++ pathFrom (target st)
                  | otherwise = "open import " ++ tMod t
-          line o its = Insert src end (T.pack ("\n" ++ ind ++ o) <> directive its)
+          -- a statement inside a one-line block (`let open A using (x) ; open B in …`)
+          -- does not start its line: the new one joins it with `;`, as a new
+          -- line would break the block's layout (R32, test/Rewrite/repair-let-open)
+          line o its | startsLine txt start = Insert src end (T.pack ("\n" ++ ind ++ o) <> directive its)
+                     | otherwise            = Insert src end (T.pack (" ; " ++ o) <> directive its)
           -- `open import X using (…)` is gathered over all statements (mergeX)
           insert = [ line opener direct | not (null direct), tLocal t ] ++
                    [ line ("open " ++ aliasF ++ "." ++ tPath t) chain | not (null chain) ] ++
