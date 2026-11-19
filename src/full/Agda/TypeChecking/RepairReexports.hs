@@ -196,8 +196,18 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     -- on the way (its submodule is then a copy the importer cannot name).
     chainLocal i hs = tLocal t && i > 0
 
+    -- which hops of a lineage are module applications (`module N = F args`)
+    appliedOps = \case
+      Defined     -> []
+      Opened _ w  -> False : appliedOps w
+      Applied _ w -> True  : appliedOps w
+    -- a chain whose facade hop is an application NAMED by the hop before it
+    -- (`module FI = F T` then `open FI`, or `FI.x`): the importer names the
+    -- copy of the submodule as `FI.N` itself (R22, test/Rewrite/repair-instance-submodule);
+    -- an application anywhere else on the way is a copy nobody can name
+
     -- unqualified uses: (statement key, item text, through a chain), or a skip
-    uses :: [Either String (Int, T.Text, Bool)]
+    uses :: [Either String (Int, T.Text, Via)]
     uses = map snd usesAt
     usesAt = concatMap use occs
     use (Occurrence x what) = case (x, what) of
@@ -219,13 +229,19 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     handled = [ p | (Just p, Right _) <- usesAt ] ++ [ p | (Just p, Right _) <- qualsAt ]
     through w item = case w of
       Opened q _ | Just k <- posOf q, Just st <- Map.lookup k byKey ->
-        let hs = lineageTexts w
+        let hs  = lineageTexts w
+            ops = appliedOps w
+            off = length hs - length (afterStmt st hs)
+            -- the statement opens a named instance of the facade
+            inst i = chainLocal i hs && i == 1 && isNothing (osShown st) && off == 1 && take 1 (drop 1 ops) == [True]
         in case crossing (Just (target st)) (afterStmt st hs) of
              Nothing -> Left ""
              Just i
-               | chainLocal i hs && applied (drop 1 hs) -> Left "a submodule re-export reached through an applied chain"
                | any (\ (n, _, ren, _) -> ren && T.pack n == item) (osItems st) -> Left ("renamed: " ++ T.unpack item)
-               | otherwise -> Right (k, item, chainLocal i hs)
+               | inst i -> Right (k, item, ViaInst (prettyShow (osModule st)))
+               | chainLocal i hs && (applied (drop 1 hs) || or (take (off + i - 1) (drop 1 ops))) ->
+                   Left "a submodule re-export reached through an applied chain"
+               | otherwise -> Right (k, item, if chainLocal i hs then ViaChain else ViaDirect)
       _ -> Left ""
 
     -- an overloaded name (constructor, field, pattern synonym) means EVERY
@@ -242,7 +258,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     -- an instance listed in a crossing directive is used without being
     -- written: it moves like a used name
     used    = List.nub ([ (k, renamed it, c) | Right (k, it, c) <- uses ] ++
-                [ (k, T.pack n, False) | (k, st) <- Map.toList byKey
+                [ (k, T.pack n, ViaDirect) | (k, st) <- Map.toList byKey
                                        , (n, _, _, _) <- crossingItems st, n `Set.member` insts ])
     skipped = [ why | Left why <- uses, not (null why) ]
     -- a name the target renames is written as the entry (`map to mmap`)
@@ -255,10 +271,10 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     qual (Occurrence x what) = case (x, what) of
       (C.Qual _ _, Resolved _ _) | Just p <- posOf x, p `Set.member` movedHeads -> []
       (C.Qual _ _, Resolved r qms) ->
-        let rawName = [ lineageTexts (anameLineage a) | a <- names r ]
-            rawQual = [ lineageTexts (amodLineage am) | am <- qms ]
+        let rawName = [ (lineageTexts l, appliedOps l) | a <- names r, let l = anameLineage a ]
+            rawQual = [ (lineageTexts l, appliedOps l) | am <- qms, let l = amodLineage am ]
             denotesF = any (\ am -> prettyShow (amodName am) == fac) qms
-            hit hs = (\ i -> (i, hs)) <$> crossing (if denotesF then Just fac else Nothing) (map norm hs)
+            hit (hs, ops) = (\ i -> (i, hs, ops)) <$> crossing (if denotesF then Just fac else Nothing) (map norm hs)
             hitsN = mapMaybe hit rawName
             hitsQ = mapMaybe hit rawQual
             full  = prettyShow x
@@ -272,16 +288,18 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
         in case (hitsN, hitsQ) of
              (_ : _, _) | Just _ <- lookup (prettyShow (C.unqualify x)) (tRenames t) ->
                [ Left ("a renamed name used qualified: " ++ full) ]
-             ((i, hs) : _, _) -> [ requalify x qual' sub i hs ]
+             ((i, hs, ops) : _, _) -> [ requalify x qual' sub i hs ops ]
              ([], _ : _) | '.' `elem` qual' -> [ Left ("a qualified module path crossing the target: " ++ full) ]
-             ([], (i, hs) : _) -> [ requalify x qual' sub i hs ]
+             ([], (i, hs, ops) : _) -> [ requalify x qual' sub i hs ops ]
              _ -> []
       _ -> []
-    requalify x q sub i hs = case span' x of
+    requalify x q sub i hs ops = case span' x of
       Nothing -> Left "a qualified name without a range"
       Just (a, b)
         | not (qtext `T.isPrefixOf` slice) -> Left ("a qualified name written otherwise: " ++ T.unpack slice)
-        | chainLocal i hs && applied hs -> Left "a submodule re-export reached through an applied chain"
+        -- `FI.x` with `module FI = F T`: the qualifier names the copy (R22)
+        | inst -> Right (Replace src (a, a + T.length qtext) (T.pack (q ++ "." ++ tMod t ++ ".")), False)
+        | chainLocal i hs && (applied hs || or (take i ops)) -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
             let prefix | chainLocal i hs = aliasF ++ "." ++ tMod t ++ "."
                        | tLocal t        = q ++ "." ++ tMod t ++ "."
@@ -291,6 +309,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
               -- the whole qualifier as written (`Once.CCC.FrameSemantics`
               -- in `Once.CCC.FrameSemantics.fs-interp`), not its first part
               qtext = T.pack (q ++ ".")
+              inst  = chainLocal i hs && i == 1 && take 1 ops == [True] && not (applied hs)
     span' x = case (rStart' (getRange x), rEnd' (getRange x)) of
       (Just s, Just e) -> Just (fromIntegral (posPos s) - 1, fromIntegral (posPos e) - 1)
       _ -> Nothing
@@ -303,6 +322,8 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
       (pre, rest) | not (T.null rest) ->
         (T.unpack (T.takeWhile (\ c -> not (isBlank c) && c /= '\n')
                     (T.drop (T.length pre + length m + 11) txt)), True)
+      -- a plain `import M` (its own line) binds `M` already: not imported twice
+      _ | any (\ l -> T.strip l == T.pack ("import " ++ m)) (T.lines txt) -> (m, True)
       _ -> (fresh (lastComponent m), False)
     lastComponent m = reverse (takeWhile (/= '.') (reverse m))
     fresh a | taken a   = fresh (a ++ "′")
@@ -317,7 +338,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     -- an `open import X …` (there, or being added) binds `X` already
     needImportX = not (tLocal t) && not (null qualIntents) && not haveX
                   && not (aliasX == tMod t && (not (null neededX) || not (null ownX)))
-    needImportF = not haveF && (or [ c | Right (_, _, c) <- uses ] || or [ c | Right (_, c) <- quals ])
+    needImportF = not haveF && (or [ c == ViaChain | Right (_, _, c) <- uses ] || or [ c | Right (_, c) <- quals ])
     imports = [ importAs (tMod t) aliasX | needImportX ] ++
               [ importAs fac aliasF | needImportF ]
     importAs m a | a == m    = "import " ++ m
@@ -350,8 +371,9 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
       [ stmtIntents k st
       | k <- stmts, Just st <- [Map.lookup k byKey] ]
     stmtIntents k st =
-      let direct = [ it | (k', it, False) <- used, k' == k ]
-          chain  = [ it | (k', it, True) <- used, k' == k ]
+      let direct = [ it | (k', it, ViaDirect) <- used, k' == k ]
+          chain  = [ it | (k', it, ViaChain) <- used, k' == k ]
+          insts  = List.nub [ n | (k', _, ViaInst n) <- used, k' == k ]
           spans  = [ sp | (_, r, False, _) <- osItems st, Just sp <- [rspan r] ]
           drops  = [ sp | (_, r, _, _) <- crossingItems st, Just sp <- [rspan r] ]
           modItem = T.pack ("module " ++ tMod t)
@@ -368,7 +390,8 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
           line o its = Insert src end (T.pack ("\n" ++ ind ++ o) <> directive its)
           -- `open import X using (…)` is gathered over all statements (mergeX)
           insert = [ line opener direct | not (null direct), tLocal t ] ++
-                   [ line ("open " ++ aliasF ++ "." ++ tMod t) chain | not (null chain) ]
+                   [ line ("open " ++ aliasF ++ "." ++ tMod t) chain | not (null chain) ] ++
+                   [ line ("open " ++ n ++ "." ++ tMod t) [ it | (k', it, ViaInst n') <- used, k' == k, n' == n ] | n <- insts ]
           -- a hidden name the facade no longer exports: the hiding goes
           hspans = [ sp | (_, r) <- osHiding st, Just sp <- [rspan r] ]
           hdrops = [ sp | (n, r) <- osHiding st, Just sp <- [rspan r], target st == fac
@@ -394,7 +417,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     -- through, a top-level one first.  Only a top-level statement scopes
     -- the whole file: a statement inside a nested module does not reach a
     -- use in a sibling (R21, test/Rewrite/repair-merge-nested)
-    neededX = List.nub [ it | (_, it, False) <- used, not (tLocal t) ]
+    neededX = List.nub [ it | (_, it, ViaDirect) <- used, not (tLocal t) ]
     ownX    = [ st | st <- opens, not (osPublic st), isNothing (osShown st)
                    , prettyShow (osModule st) == tMod t, topLevel st ]
     topLevel st = let ms = maybe 0 (subtract 1) (posOf (osModule st))
@@ -412,7 +435,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
               ind = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt (stmtStart txt ms)) txt))
           in [ Group src (spansOf st) [] plain | not (null plain) ] ++
              [ NewOpen src (tMod t) (stmtEnd txt st ms me) ind rens | not (null rens) ]
-      | otherwise = case List.sortOn (\ (k, st) -> (not (topLevel st), k)) [ (k, st) | (k, _, False) <- used, Just st <- [Map.lookup k byKey] ] of
+      | otherwise = case List.sortOn (\ (k, st) -> (not (topLevel st), k)) [ (k, st) | (k, _, ViaDirect) <- used, Just st <- [Map.lookup k byKey] ] of
           ((_, st) : _) ->
             let ms  = maybe 0 (subtract 1) (posOf (osModule st))
                 me  = maybe ms (\ p -> fromIntegral (posPos p) - 1) (rEnd' (getRange (osModule st)))
@@ -425,6 +448,12 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
       _ -> Nothing
 
     intents = importIntents ++ perStmt ++ mergeX ++ qualIntents
+
+-- | How an importer reaches a name the target re-exports: directly, through
+--   a chain (the facade imported under an alias, its submodule opened), or
+--   through a named instance of the facade (its copy of the submodule opened).
+data Via = ViaDirect | ViaChain | ViaInst String
+  deriving Eq
 
 forceTarget :: Either String Target -> Int
 forceTarget = \case
