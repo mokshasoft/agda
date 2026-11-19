@@ -388,12 +388,18 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
       in group ++ hiding ++ insert
 
     -- what the importer needs from a re-exported top-level module X, from all
-    -- its statements: nothing if it opens X wholesale already, else into its
-    -- own `open import X using (…)` if it has one, else one new statement
-    -- after the first statement it came through
+    -- its statements: nothing if it opens X wholesale at the top level
+    -- already, else into its own top-level `open import X using (…)` if it
+    -- has one, else one new statement after the first statement it came
+    -- through, a top-level one first.  Only a top-level statement scopes
+    -- the whole file: a statement inside a nested module does not reach a
+    -- use in a sibling (R21, test/Rewrite/repair-merge-nested)
     neededX = List.nub [ it | (_, it, False) <- used, not (tLocal t) ]
     ownX    = [ st | st <- opens, not (osPublic st), isNothing (osShown st)
-                   , prettyShow (osModule st) == tMod t ]
+                   , prettyShow (osModule st) == tMod t, topLevel st ]
+    topLevel st = let ms = maybe 0 (subtract 1) (posOf (osModule st))
+                      s0 = stmtStart txt ms
+                  in lineBegin txt s0 == s0
     mergeX
       | null neededX = []
       | any osWholesale ownX = []
@@ -406,7 +412,7 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
               ind = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt (stmtStart txt ms)) txt))
           in [ Group src (spansOf st) [] plain | not (null plain) ] ++
              [ NewOpen src (tMod t) (stmtEnd txt st ms me) ind rens | not (null rens) ]
-      | otherwise = case List.sortOn fst [ (k, st) | (k, _, False) <- used, Just st <- [Map.lookup k byKey] ] of
+      | otherwise = case List.sortOn (\ (k, st) -> (not (topLevel st), k)) [ (k, st) | (k, _, False) <- used, Just st <- [Map.lookup k byKey] ] of
           ((_, st) : _) ->
             let ms  = maybe 0 (subtract 1) (posOf (osModule st))
                 me  = maybe ms (\ p -> fromIntegral (posPos p) - 1) (rEnd' (getRange (osModule st)))
