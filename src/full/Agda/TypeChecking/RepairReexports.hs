@@ -470,6 +470,8 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
     perStmt = concat
       [ stmtIntents k st
       | k <- stmts, Just st <- [Map.lookup k byKey] ]
+    bindsMod st' = osWholesale st' || any (\ (n, _, _, _) -> T.pack n == T.pack ("module " ++ takeWhile (/= '.') (pathFrom (target st')))) (osItems st')
+    needsMod k' st' = tLocal t && not (null [ () | (k'', _, ViaDirect) <- used, k'' == k' ]) && not (osWholesale st')
     stmtIntents k st =
       let direct = [ it | (k', it, ViaDirect) <- used, k' == k ]
           chain  = [ it | (k', it, ViaChain) <- used, k' == k ]
@@ -479,7 +481,14 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
           -- the facade's own module the path starts with (R25)
           modItem = T.pack ("module " ++ takeWhile (/= '.') (pathFrom (target st)))
           hasMod = any (\ (n, _, _, _) -> T.pack n == modItem) (osItems st)
-          adds   = [ modItem | tLocal t, not (null direct), not (osWholesale st), not hasMod ]
+          -- one `module N` item per importer: two statements opening copies
+          -- of one module (`open FlatMachine {FS} using (…)` twice) would bring
+          -- two `N`s (AmbiguousModule); the first statement that has or gets it
+          -- serves every later `open N using (…)` (R31, test/Rewrite/repair-two-copies)
+          firstMod = List.find (\ (k', st') -> target st' == target st && (bindsMod st' || needsMod k' st'))
+                               (List.sortOn fst [ (k', st') | (k', st') <- Map.toList byKey ])
+          adds   = [ modItem | tLocal t, not (null direct), not (osWholesale st), not hasMod
+                             , maybe True ((== k) . fst) firstMod ]
           group  = [ Group src spans drops adds | not (null spans), not (null drops && null adds) ]
           ms     = maybe 0 (subtract 1) (posOf (osModule st))
           me     = maybe ms (\ p -> fromIntegral (posPos p) - 1) (rEnd' (getRange (osModule st)))
