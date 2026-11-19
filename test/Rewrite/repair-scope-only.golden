@@ -1,0 +1,27 @@
+== run 1: --only-scope-checking --repair-reexports=F:3
+repair-reexports: F:3: applied, 2 importer(s) rewritten
+== A.agda (rewritten)
+module A where
+
+open import F using ()
+open import X using (T; get; hasT)
+
+a : T
+a = get
+
+== B.agda (rewritten)
+module B where
+
+open import F using ()
+open import X using (T)
+open import A
+
+b : T
+b = a
+
+== F.agda (rewritten)
+module F where
+
+open import X using (T; Has; hasT; get)
+
+== re-check: OK

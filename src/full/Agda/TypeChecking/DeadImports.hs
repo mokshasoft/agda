@@ -35,12 +35,13 @@ module Agda.TypeChecking.DeadImports
   , deadImportsWanted
   , deadImportsFor
     -- * Shared with @--repair-reexports@
+  , noteScopeInstances
   , Edit, readSource, applyEdits, posOf, isBlank, isInstanceName, groupEdits
   ) where
 
-import Control.Monad (forM, when)
+import Control.Monad (forM, forM_, when)
 import Control.Monad.IO.Class (liftIO)
-import Data.IORef (IORef, newIORef, modifyIORef', atomicModifyIORef')
+import Data.IORef (IORef, newIORef, modifyIORef', atomicModifyIORef', readIORef)
 import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
@@ -54,7 +55,10 @@ import System.IO
 
 import Agda.Syntax.Common.Pretty (prettyShow)
 import qualified Agda.Syntax.Concrete.Name as C
+import qualified Agda.Syntax.Abstract as A
 import Agda.Syntax.Abstract.Name (QName)
+import Agda.Syntax.Common (IsInstance (..))
+import qualified Agda.Syntax.Info as Info
 import Agda.Syntax.Position
 import Agda.Syntax.Scope.Base
 import Agda.Syntax.Scope.NameResolutionLog
@@ -142,7 +146,43 @@ finishDeadImports = liftIO $ do
   mapM_ (uncurry applyEdits) (reverse rs)
 
 isInstanceName :: QName -> TCM Bool
-isInstanceName q = either (const False) (isJust . defInstance) <$> getConstInfo' q
+isInstanceName q = do
+  noted <- liftIO $ readIORef scopeInstances
+  if q `Set.member` noted then return True else
+    either (const False) (isJust . defInstance) <$> getConstInfo' q
+
+-- | The instances of the modules a scope-only run checks from source
+--   (@--only-scope-checking@ with @--repair-reexports@): such a module has no
+--   signature, so its instances are read off its declarations instead, for
+--   the whole run (one process).
+{-# NOINLINE scopeInstances #-}
+scopeInstances :: IORef (Set.Set QName)
+scopeInstances = unsafePerformIO (newIORef Set.empty)
+
+-- | Note the instances a module's declarations declare: an @instance@
+--   signature or definition, in any block, section or @where@, and a
+--   module application's copy of an instance.
+noteScopeInstances :: [A.Declaration] -> TCM ()
+noteScopeInstances = mapM_ decl
+  where
+    note q = liftIO $ modifyIORef' scopeInstances (Set.insert q)
+    inst di = case Info.defInstance di of
+      InstanceDef{}  -> True
+      NotInstanceDef -> False
+    decl = \case
+      A.Axiom _ di _ _ q _      -> when (inst di) (note q)
+      A.FunDef di q cs          -> do when (inst di) (note q); mapM_ clause cs
+      A.Mutual _ ds             -> mapM_ decl ds
+      A.Section _ _ _ _ ds      -> mapM_ decl ds
+      A.ScopedDecl _ ds         -> mapM_ decl ds
+      A.DataDef _ _ _ _ cs      -> mapM_ decl cs
+      A.RecDef _ _ _ _ _ _ ds   -> mapM_ decl ds
+      A.Apply _ _ _ _ ci _      ->
+        forM_ (Map.toList (A.renNames ci)) $ \ (old, news) -> do
+          i <- isInstanceName old
+          when i $ mapM_ note (foldr (:) [] news)
+      _                         -> return ()
+    clause c = mapM_ decl (A.whereDecls (A.clauseWhereDecls c))
 
 -- | A position's offset in its file.
 posOf :: HasRange a => a -> Maybe Int

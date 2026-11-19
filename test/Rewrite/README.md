@@ -53,6 +53,16 @@ goldens did not have.
 | R20 | a re-export that renames (`renaming (map to mmap) public`) was refused ("it renames"): each importer now writes the renaming entry itself (a new `open import X using (…) renaming (…)`, or `using () renaming (…)` beside its own statement on X); a renamed name used qualified is refused (found on Once, plan 0.152 A(2), IRObsCorrect.Prelude, 2026-11-18) | repair-renaming |
 | R21 | a needed name merged into the importer's own `open import X using (…)` that sat inside a nested module (`module PairTrace where open import Data.List.Properties using (…)`): a use in a sibling module lost it (NotInScope). Only a top-level statement is a merge target; a new statement goes after a top-level statement the names came through first (found on Once, plan 0.152 A(2), IRObsCorrect/Pair/Chain, 2026-11-19) | repair-merge-nested |
 
+## Scope-only rounds
+
+`--only-scope-checking` with `--repair-reexports`: every module the run checks from source is only
+scope-checked (the repair reads scope only; an overloaded name already means every candidate), no
+interface is written, and a module made this run is reused from the decoded-module cache by its source
+hash (without that, each importer re-made it: 787 checks for 85 modules on Once). Instances of such a
+module (no signature) are read off its declarations, a module application's copies included. A later
+full run is the verification. On Once's IRObsCorrect batch (85 modules): 74 s vs ~25 min, the same
+messages and sources (repair-scope-only: a diamond import and an instance that must move).
+
 ## Further patterns pinned (no bug found, but plausible)
 
 * renamings in the facade: each importer writes the entry itself (R20); in the importer: refused with a reason (repair-renames)

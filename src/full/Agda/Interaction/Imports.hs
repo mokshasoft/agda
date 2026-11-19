@@ -93,7 +93,7 @@ import Agda.TypeChecking.AnalysisOutput
 import qualified Agda.TypeChecking.ProfileCounters as PC
 import Agda.TypeChecking.NameResolutionReport
   ( startNameResolutionReport, writeNameResolutionReport )
-import Agda.TypeChecking.DeadImports ( deadImportsFor, finishDeadImports )
+import Agda.TypeChecking.DeadImports ( deadImportsFor, finishDeadImports, noteScopeInstances )
 import Agda.TypeChecking.RepairReexports ( repairFor, finishRepair )
 import qualified Agda.Syntax.Scope.NameResolutionLog as Log
 import Agda.TypeChecking.WideSections (reportWideSections, withWideSectionsOnAbort)
@@ -144,6 +144,14 @@ ignoreAllInterfaces = optIgnoreAllInterfaces <$> commandLineOptions
 
 writeInterfaces :: HasOptions m => m Bool
 writeInterfaces = optWriteInterfaces <$> commandLineOptions
+
+-- | @--only-scope-checking@ with @--repair-reexports@: every module the run
+--   checks from source is only scope-checked (the repair reads scope only),
+--   and no interface is written; a module made this run is reused from the
+--   decoded-module cache, by its source hash (there is no file to compare).
+--   A later full run is the verification.
+scopeOnlyRun :: HasOptions m => m Bool
+scopeOnlyRun = (\ o -> optOnlyScopeChecking o && not (null (optRepairReexports o))) <$> commandLineOptions
 
 -- | The decorated source code.
 
@@ -904,9 +912,13 @@ getStoredInterface x file@(SourceFile fi) msrc = do
   case cachedE of
     Left whyNotCached -> loadInterfaceFile whyNotCached
 
-    -- If it's cached ignoreInterfaces has no effect;
-    -- to avoid typechecking a file more than once.
-    Right mi -> do
+    -- 'scopeOnlyRun': a module made this run has no file; its source decides
+    Right mi -> ifM (lift scopeOnlyRun)
+      (do checkSourceHashET (iSourceHash (miInterface mi))
+          reportSLn "import.iface" 5 $ "  using the scope-only version of " ++ prettyShow x
+          loadDecodedModule file mi) $ do
+      -- If it's cached ignoreInterfaces has no effect;
+      -- to avoid typechecking a file more than once.
       (ifile, hashes) <- getIFileHashesET
 
       let ifp = filePath $ intFilePath ifile
@@ -1234,7 +1246,10 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
                       , envCheckingDefinitions = []
                       }) do
 
-    let onlyScope = isMain == MainInterface ScopeCheck
+    -- 'scopeOnlyRun': its instances are noted from its declarations (it
+    -- has no signature)
+    scopeAll <- scopeOnlyRun
+    let onlyScope = isMain == MainInterface ScopeCheck || scopeAll
 
     reportSLn "import.iface.create" 5 $
       "Creating interface for " ++ prettyShow mname ++ "..."
@@ -1313,6 +1328,7 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
     if onlyScope
       then do
         reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Skipping type checking."
+        when scopeAll $ noteScopeInstances ds
         cacheCurrentLog
       else do
         reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": Starting type checking."
@@ -1428,6 +1444,9 @@ createInterface mname sf@(SourceFile sfi) isMain msrc = do
         reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": We have warnings, skipping writing interface file."
         return i
       (True, MainInterface ScopeCheck, _) -> do
+        reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": We are just scope-checking, skipping writing interface file."
+        return i
+      _ | scopeAll -> do
         reportSLn "import.iface.create" 7 $ prettyShow mname ++ ": We are just scope-checking, skipping writing interface file."
         return i
       (_, _, False) -> do
