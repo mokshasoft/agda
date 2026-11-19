@@ -61,6 +61,10 @@ data Target = Target
   { tFile   :: FilePath
   , tMod    :: String   -- ^ The re-exported module, as written at the line.
   , tLocal  :: Bool     -- ^ A submodule of the facade, not @open import@.
+  , tPath   :: String
+      -- ^ How an importer names the re-exported module: for a submodule, its
+      --   path inside the facade (`FlatSimulation.C` when `C` is in scope there
+      --   only through `open FlatSimulation`), else 'tMod' (R25).
   , tPublic :: Edit     -- ^ Removing the @public@.
   , tNames  :: [String] -- ^ What the statement brings in (as bound).
   , tRenames :: [(String, T.Text)]
@@ -124,16 +128,25 @@ repairFor mname src occs opens = do
 
 -- | The target statement in its facade.
 facade :: T.Text -> FilePath -> [OpenStmt] -> TKey -> Either String Target
-facade txt src opens (me, line) =
+facade txt src opens key@(me, line) =
   case [ st | st <- opens, osPublic st, (posLine <$> rStart' (getRange (osModule st))) == Just (fromIntegral line) ] of
     [] -> Left "no public open statement starts at that line"
     (st : _)
       | Just _ <- osShown st -> Left "it re-exports a module application"
       | not (importStmtIn txt st) && not ((me ++ ".") `List.isPrefixOf` osTarget st) ->
           Left ("it opens " ++ osTarget st ++ ", which is not a submodule of the facade")
+      | not (importStmtIn txt st), ".#" `List.isInfixOf` drop (length me + 1) (osTarget st) ->
+          Left ("it opens " ++ osTarget st ++ ", a submodule an importer cannot name")
       | otherwise -> case (posOf (osModule st), rEnd' (getRange (osModule st))) of
-          (Just ms, Just me) ->
-            let mstart  = ms - 1
+          (Just ms, Just me') ->
+            let me      = me'
+                path | importStmtIn txt st = prettyShow (osModule st)
+                     -- an anonymous section's `_` is no part of the path (R23)
+                     | otherwise           = List.intercalate "." (filter (/= "_") (splitDots (drop (length (fst key) + 1) (osTarget st))))
+                splitDots x = case break (== '.') x of
+                  (c, [])       -> [c]
+                  (c, _ : rest) -> c : splitDots rest
+                mstart  = ms - 1
                 mend    = fromIntegral (posPos me) - 1
                 before  = T.dropWhileEnd isBlank (T.take mstart txt)
                 isImp   = T.pack "import" `T.isSuffixOf` before
@@ -152,7 +165,7 @@ facade txt src opens (me, line) =
                                  | (n, r, True, _) <- osItems st
                                  , Just a <- [subtract 1 . fromIntegral . posPos <$> rStart' r]
                                  , Just b <- [subtract 1 . fromIntegral . posPos <$> rEnd' r] ]
-                   in Right $ Target src (prettyShow (osModule st)) (not isImp) pubEdit (map fst (osHops st)) renames
+                   in Right $ Target src (prettyShow (osModule st)) (not isImp) path pubEdit (map fst (osHops st)) renames
                  _ -> Left "no `public` found in the statement"
           _ -> Left "the statement has no range"
 
@@ -314,11 +327,11 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
       Just (a, b)
         | not (qtext `T.isPrefixOf` slice) -> Left ("a qualified name written otherwise: " ++ T.unpack slice)
         -- `FI.x` with `module FI = F T`: the qualifier names the copy (R22)
-        | inst -> Right (Replace src (a, a + T.length qtext) (T.pack (q ++ "." ++ tMod t ++ ".")), False)
+        | inst -> Right (Replace src (a, a + T.length qtext) (T.pack (q ++ "." ++ tPath t ++ ".")), False)
         | chainLocal i hs && (applied hs || or (take i ops)) -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
-            let prefix | chainLocal i hs = aliasF ++ "." ++ tMod t ++ "."
-                       | tLocal t        = q ++ "." ++ tMod t ++ "."
+            let prefix | chainLocal i hs = aliasF ++ "." ++ tPath t ++ "."
+                       | tLocal t        = q ++ "." ++ tPath t ++ "."
                        | otherwise       = aliasX ++ "." ++ sub
             in Right (Replace src (a, a + T.length qtext) (T.pack prefix), chainLocal i hs)
         where slice = T.take (b - a) (T.drop a txt)
@@ -392,7 +405,8 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
           insts  = List.nub [ n | (k', _, ViaInst n) <- used, k' == k ]
           spans  = [ sp | (_, r, False, _) <- osItems st, Just sp <- [rspan r] ]
           drops  = [ sp | (_, r, _, _) <- crossingItems st, Just sp <- [rspan r] ]
-          modItem = T.pack ("module " ++ tMod t)
+          -- the facade's own module the path starts with (R25)
+          modItem = T.pack ("module " ++ takeWhile (/= '.') (tPath t))
           hasMod = any (\ (n, _, _, _) -> T.pack n == modItem) (osItems st)
           adds   = [ modItem | tLocal t, not (null direct), not (osWholesale st), not hasMod ]
           group  = [ Group src spans drops adds | not (null spans), not (null drops && null adds) ]
@@ -401,13 +415,13 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
           start  = stmtStart txt ms
           end    = stmtEnd txt st ms me
           ind    = T.unpack (T.takeWhile isBlank (T.drop (lineBegin txt start) txt))
-          opener | tLocal t  = "open " ++ tMod t
+          opener | tLocal t  = "open " ++ tPath t
                  | otherwise = "open import " ++ tMod t
           line o its = Insert src end (T.pack ("\n" ++ ind ++ o) <> directive its)
           -- `open import X using (…)` is gathered over all statements (mergeX)
           insert = [ line opener direct | not (null direct), tLocal t ] ++
-                   [ line ("open " ++ aliasF ++ "." ++ tMod t) chain | not (null chain) ] ++
-                   [ line ("open " ++ n ++ "." ++ tMod t) [ it | (k', it, ViaInst n') <- used, k' == k, n' == n ] | n <- insts ]
+                   [ line ("open " ++ aliasF ++ "." ++ tPath t) chain | not (null chain) ] ++
+                   [ line ("open " ++ n ++ "." ++ tPath t) [ it | (k', it, ViaInst n') <- used, k' == k, n' == n ] | n <- insts ]
           -- a hidden name the facade no longer exports: the hiding goes
           hspans = [ sp | (_, r) <- osHiding st, Just sp <- [rspan r] ]
           hdrops = [ sp | (n, r) <- osHiding st, Just sp <- [rspan r], target st == fac
@@ -474,7 +488,7 @@ data Via = ViaDirect | ViaChain | ViaInst String
 forceTarget :: Either String Target -> Int
 forceTarget = \case
   Left why -> length why
-  Right (Target f m l (a, b, x) ns rs) -> length f + length m + fromEnum l + a + b + T.length x + sum (map length ns)
+  Right (Target f m l pth (a, b, x) ns rs) -> length f + length m + fromEnum l + length pth + a + b + T.length x + sum (map length ns)
                                          + sum [ length n + T.length e | (n, e) <- rs ]
 
 forceIntents :: [Intent] -> Int
