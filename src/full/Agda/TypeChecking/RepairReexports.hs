@@ -89,11 +89,15 @@ data St = St
   , stIntents :: Map.Map TKey [Intent]
   , stEdited  :: Map.Map TKey (Set.Set FilePath)
   , stTouched :: Map.Map TKey (Set.Set (FilePath, Int))
+  , stAliases :: Set.Set (String, String)
+      -- ^ Every @import M as A@ of the modules checked so far, as (A, M): a
+      --   lineage hop is written as in the module that made it, which may be
+      --   an alias there (R27).
   }
 
 {-# NOINLINE state #-}
 state :: IORef St
-state = unsafePerformIO $ newIORef $ St Map.empty Map.empty Map.empty Map.empty Map.empty
+state = unsafePerformIO $ newIORef $ St Map.empty Map.empty Map.empty Map.empty Map.empty Set.empty
 
 repairWanted :: TCM Bool
 repairWanted = not . null . optRepairReexports <$> commandLineOptions
@@ -111,13 +115,14 @@ repairFor mname src occs opens = do
   unless (null targets) $ liftIO $ do
     txt <- readSource src
     let me = prettyShow mname
+    modifyIORef' state $ \ s -> s { stAliases = Set.union (Set.fromList (aliasesIn txt)) (stAliases s) }
     forM_ [ k | k@(m, _) <- targets, m == me ] $ \ k -> do
       -- forced: a lazy decision would keep the whole module alive to the end
       let f = facade txt src opens k
       forceTarget f `seq` modifyIORef' state $ \ s -> s { stTargets = Map.insert k f (stTargets s) }
-    St{ stTargets = ts } <- readIORef state
+    St{ stTargets = ts, stAliases = als } <- readIORef state
     forM_ [ (k, t) | (k@(m, _), Right t) <- Map.toList ts, m /= me ] $ \ (k@(fac, _), t) -> do
-      let (intents, skips, handled) = importer insts txt src fac t occs opens
+      let (intents, skips, handled) = importer insts als txt src fac t occs opens
       forceIntents intents `seq` length (concat skips) `seq` sum handled `seq` modifyIORef' state $ \ s -> s
         { stTouched = if null handled then stTouched s else Map.insertWith Set.union k (Set.fromList [ (src, h) | h <- handled ]) (stTouched s) }
       modifyIORef' state $ \ s -> s
@@ -125,6 +130,10 @@ repairFor mname src occs opens = do
         , stIntents = if null intents then stIntents s else Map.insertWith (++) k intents (stIntents s)
         , stEdited  = if null intents then stEdited s else Map.insertWith Set.union k (Set.singleton src) (stEdited s)
         }
+
+-- | A source's @import M as A@ lines, as (A, M).
+aliasesIn :: T.Text -> [(String, String)]
+aliasesIn txt = [ (a, m) | l <- T.lines txt, ["import", m, "as", a] <- [map T.unpack (T.words l)] ]
 
 -- | The target statement in its facade.
 facade :: T.Text -> FilePath -> [OpenStmt] -> TKey -> Either String Target
@@ -176,8 +185,8 @@ importStmtIn txt st = case posOf (osModule st) of
   Nothing -> False
 
 -- | An importer's repairs for one target, and why it cannot be repaired.
-importer :: Set.Set String -> T.Text -> FilePath -> String -> Target -> [Occurrence] -> [OpenStmt] -> ([Intent], [String], [Int])
-importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
+importer :: Set.Set String -> Set.Set (String, String) -> T.Text -> FilePath -> String -> Target -> [Occurrence] -> [OpenStmt] -> ([Intent], [String], [Int])
+importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
   where
     byKey = Map.fromList [ (k, st) | st <- opens, Just k <- [posOf (osModule st)] ]
     -- `open import M as A` is logged as `open A`: the module it opens is M
@@ -204,8 +213,11 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
                  | otherwise = unalias (hs !! (i - 1)) == fac
     -- a hop written as an alias of the importer's (`import F as Fx` then
     -- `module EE = Fx args`) is that module (R24, test/Rewrite/repair-alias-instance)
-    unalias h = fromMaybe h (lookup h importAliases)
-    importAliases = [ (a, m) | l <- T.lines txt, ["import", m, "as", a] <- [map T.unpack (T.words l)] ]
+    -- … or in the module that wrote the hop: some module of the run binds
+    -- the alias to the facade (`module C = FC FS` in FlatSimulation, used
+    -- from ArithBlockValue; R27, test/Rewrite/repair-alias-elsewhere)
+    unalias h | (h, fac) `Set.member` als = fac
+              | otherwise = fromMaybe h (lookup h (aliasesIn txt))
 
     -- A submodule of the facade reached through a chain (the importer opens
     -- G, which re-exports the facade): the importer imports the facade
@@ -525,7 +537,7 @@ finishRepair :: TCM ()
 finishRepair = do
   targets <- optRepairReexports <$> commandLineOptions
   unless (null targets) $ liftIO $ do
-    St ts skips intents edited touched <- readIORef state
+    St ts skips intents edited touched _ <- readIORef state
     -- targets touching a common occurrence (a chain of re-exports) are not
     -- written together: the first is, the rest wait for the next run
     claimed <- newIORef (Set.empty :: Set.Set (FilePath, Int))
@@ -564,7 +576,7 @@ finishRepair = do
                    [ (a, b, s) | Replace f' (a, b) s <- is, f' == f ] ++
                    [ e | (f', e) <- pub, f' == f ]
       applyEdits f (gEdits ++ others)
-    writeIORef state $ St Map.empty Map.empty Map.empty Map.empty Map.empty
+    writeIORef state $ St Map.empty Map.empty Map.empty Map.empty Map.empty Set.empty
   where
     fileOf = \case { Group f _ _ _ -> f; Insert f _ _ -> f; Replace f _ _ -> f; NewOpen f _ _ _ _ -> f }
 
