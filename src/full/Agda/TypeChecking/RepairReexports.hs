@@ -537,8 +537,12 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
     -- the whole file: a statement inside a nested module does not reach a
     -- use in a sibling (R21, test/Rewrite/repair-merge-nested)
     neededX = List.nub [ it | (_, it, ViaDirect) <- used, not (tLocal t) ]
+    -- a statement that renames is no merge target: a name it renames would be
+    -- listed twice (`using (sp; Reg) renaming (Reg to Reg')`, R34,
+    -- test/Rewrite/repair-merge-renaming); a new statement takes the names
     ownX    = [ st | st <- opens, not (osPublic st), isNothing (osShown st)
-                   , prettyShow (osModule st) == tMod t, topLevel st ]
+                   , prettyShow (osModule st) == tMod t, topLevel st
+                   , not (any (\ (_, _, ren, _) -> ren) (osItems st)) ]
     topLevel st = let ms = maybe 0 (subtract 1) (posOf (osModule st))
                       s0 = stmtStart txt ms
                   in lineBegin txt s0 == s0
