@@ -121,7 +121,10 @@ repairFor mname src occs opens = do
       let f = facade txt src opens k
       forceTarget f `seq` modifyIORef' state $ \ s -> s { stTargets = Map.insert k f (stTargets s) }
     St{ stTargets = ts, stAliases = als } <- readIORef state
-    forM_ [ (k, t) | (k@(m, _), Right t) <- Map.toList ts, m /= me ] $ \ (k@(fac, _), t) -> do
+    -- the facade itself is an importer too: a use of its own instance of the
+    -- submodule (`module NSP = NineStepPres …` then `NSP.u2`) crosses the target
+    -- (R29, test/Rewrite/repair-self-instance)
+    forM_ [ (k, t) | (k, Right t) <- Map.toList ts ] $ \ (k@(fac, _), t) -> do
       let (intents, skips, handled) = importer insts als txt src fac t occs opens
       forceIntents intents `seq` length (concat skips) `seq` sum handled `seq` modifyIORef' state $ \ s -> s
         { stTouched = if null handled then stTouched s else Map.insertWith Set.union k (Set.fromList [ (src, h) | h <- handled ]) (stTouched s) }
@@ -304,7 +307,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
                | any (\ (n, _, ren, _) -> ren && T.pack n == item) (osItems st) -> Left ("renamed: " ++ T.unpack item)
                | inst i, restricted (prettyShow (osModule st)) ->
                    Left ("the instance " ++ prettyShow (osModule st) ++ " is applied with a directive: add the submodule to it by hand")
-               | inst i -> Right (k, item, ViaInst (prettyShow (osModule st)))
+               | inst i -> Right (k, item, ViaInst (prettyShow (osModule st) ++ "." ++ pathFrom (head (afterStmt st hs))))
                | chainLocal i hs && (applied (drop 1 hs) || or (take (off + i - 1) (drop 1 ops))) ->
                    Left "a submodule re-export reached through an applied chain"
                | otherwise -> Right (k, item, if chainLocal i hs then ViaChain else ViaDirect)
@@ -366,7 +369,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
         | not (qtext `T.isPrefixOf` slice) -> Left ("a qualified name written otherwise: " ++ T.unpack slice)
         -- `FI.x` with `module FI = F T`: the qualifier names the copy (R22)
         | inst, restricted q -> Left ("the instance " ++ q ++ " is applied with a directive: add the submodule to it by hand")
-        | inst -> Right (Replace src (a, a + T.length qtext) (T.pack (q ++ "." ++ tPath t ++ ".")), False)
+        | inst -> Right (Replace src (a, a + T.length qtext) (T.pack (q ++ "." ++ pathFrom (norm (head hs)) ++ ".")), False)
         | chainLocal i hs && (applied hs || or (take i ops)) -> Left "a submodule re-export reached through an applied chain"
         | otherwise ->
             let prefix | chainLocal i hs = aliasF ++ "." ++ tPath t ++ "."
@@ -460,7 +463,7 @@ importer insts als txt src fac t occs opens = (intents, List.nub skips, handled)
           -- `open import X using (…)` is gathered over all statements (mergeX)
           insert = [ line opener direct | not (null direct), tLocal t ] ++
                    [ line ("open " ++ aliasF ++ "." ++ tPath t) chain | not (null chain) ] ++
-                   [ line ("open " ++ n ++ "." ++ tPath t) [ it | (k', it, ViaInst n') <- used, k' == k, n' == n ] | n <- insts ]
+                   [ line ("open " ++ n) [ it | (k', it, ViaInst n') <- used, k' == k, n' == n ] | n <- insts ]
           -- a hidden name the facade no longer exports: the hiding goes
           hspans = [ sp | (_, r) <- osHiding st, Just sp <- [rspan r] ]
           hdrops = [ sp | (n, r) <- osHiding st, Just sp <- [rspan r], target st == fac
