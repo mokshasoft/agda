@@ -188,7 +188,11 @@ importer insts txt src fac t occs opens = (intents, List.nub skips, handled)
     crossing :: Maybe String -> [String] -> Maybe Int
     crossing first hs = List.find ok [ i | (i, h) <- zip [0 ..] hs, h == tMod t ]
       where ok i | i == 0    = first == Just fac
-                 | otherwise = hs !! (i - 1) == fac
+                 | otherwise = unalias (hs !! (i - 1)) == fac
+    -- a hop written as an alias of the importer's (`import F as Fx` then
+    -- `module EE = Fx args`) is that module (R24, test/Rewrite/repair-alias-instance)
+    unalias h = fromMaybe h (lookup h importAliases)
+    importAliases = [ (a, m) | l <- T.lines txt, ["import", m, "as", a] <- [map T.unpack (T.words l)] ]
 
     -- A submodule of the facade reached through a chain (the importer opens
     -- G, which re-exports the facade): the importer imports the facade
